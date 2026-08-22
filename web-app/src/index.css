@@ -1325,7 +1325,9 @@ div.today .today-line {
   width: 100%;
   margin-top: 28px;
   display: grid;
-  grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+  /* the calendar's week view no longer needs to be this wide to read well
+   * collapsed, so the list gets a bigger, still-capped share of the row */
+  grid-template-columns: minmax(0, 440px) minmax(0, 1fr);
   gap: 18px;
   align-items: start;
 }
@@ -1590,7 +1592,13 @@ div.today .today-line {
   padding: 14px 16px 12px;
   display: flex;
   flex-direction: column;
-  /* the grid wants every pixel of height the viewport can spare */
+}
+
+/* month's grid wants every pixel of height the viewport can spare — but
+ * week's collapsed rows are only ever a few lines tall, and the popped-out
+ * day now floats free of this box entirely, so forcing the same tall panel
+ * there just left a slab of empty space under a couple of short rows */
+.cal[data-view="month"] {
   height: calc(100vh - 236px);
   min-height: 520px;
 }
@@ -1795,19 +1803,16 @@ div.today .today-line {
 .band-chip:hover { background: color-mix(in srgb, var(--tone) 40%, transparent); }
 .band-chip[data-done="true"] { opacity: 0.45; text-decoration: line-through; }
 
+.band-chip b {
+  margin-right: 4px;
+  font-weight: 400;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
 /* a window that runs past the edge of the view loses its cap on that side */
 .band-chip[data-open-left="true"] { border-top-left-radius: 0; border-bottom-left-radius: 0; box-shadow: none; }
 .band-chip[data-open-right="true"] { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-
-.hours {
-  display: grid;
-  grid-template-columns: var(--gutter) minmax(0, 1fr);
-}
-
-.gutter {
-  display: grid;
-  grid-auto-rows: var(--hour);
-}
 
 .hour-label {
   font-size: 10.5px;
@@ -1825,13 +1830,121 @@ div.today .today-line {
 
 .col {
   position: relative;
-  display: grid;
-  grid-auto-rows: var(--hour);
   border-left: 1px solid var(--line);
+  padding: 2px 0;
 }
 
 .col[data-today="true"] { background: rgba(255, 255, 255, 0.025); }
 .col[data-selected="true"] { background: rgba(255, 255, 255, 0.05); }
+
+/* the always-visible glance at a day's anchored reminders — small on purpose,
+ * this is the column's real (unstretched) height, not a placeholder for
+ * something bigger, so a quiet day just stays a couple of lines tall */
+.day-preview {
+  list-style: none;
+  margin: 0;
+  padding: 0 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transition: opacity 120ms ease;
+}
+
+/* swapped out for the real timeline once this day's full breakdown is showing */
+.col:hover .day-preview { opacity: 0; pointer-events: none; }
+
+.day-preview-item {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.day-preview-item i {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  align-self: center;
+  border-radius: 50%;
+  background: var(--tone);
+}
+
+.day-preview-item b {
+  flex: none;
+  font-weight: 400;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.day-preview-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.day-preview-item[data-done="true"] { opacity: 0.45; text-decoration: line-through; }
+
+.day-preview-empty,
+.day-preview-more {
+  font-size: 10px;
+  color: var(--ink-faint);
+  padding-left: 1px;
+}
+
+/* the full hour-by-hour breakdown — sits out of flow so it never stretches
+ * the row, and pops forward on top of everything else instead of just
+ * unfolding in place: it scales up off a raised card, not a plain reveal.
+ * bounded and self-scrolling, with its own hour axis, so it never depends
+ * on where the page around it happens to be scrolled. positioned fixed
+ * (top/left/width set in JS on hover, from the column's real screen
+ * position) so it can overlap past the calendar panel's own edge for a
+ * day at the start or end of the week, instead of getting clipped by it */
+.day-detail {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 220px;
+  /* tall enough to show a good stretch of the day without scrolling, but
+   * not so tall it dwarfs the page — the weekly stats section below it is
+   * fixed/z-indexed under it either way, so it still just overlaps */
+  max-height: min(62vh, 500px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: grid;
+  grid-template-columns: var(--gutter) minmax(0, 1fr);
+  background: var(--dune-lift);
+  border-radius: 12px;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  transform: translateY(-2px) scale(0.97);
+  opacity: 0;
+  z-index: 12;
+  pointer-events: none;
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease;
+}
+
+.col:hover .day-detail {
+  transform: translateY(-10px) scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.day-axis {
+  display: grid;
+  grid-auto-rows: var(--hour);
+  padding-top: 6px;
+}
+
+.day-timeline {
+  position: relative;
+  display: grid;
+  grid-auto-rows: var(--hour);
+  padding-top: 6px;
+  border-left: 1px solid var(--line);
+}
 
 .hour-line { border-top: 1px solid rgba(255, 255, 255, 0.05); }
 
@@ -1893,6 +2006,87 @@ div.today .today-line {
   height: 7.5px;
   border-radius: 50%;
   background: #E37152;
+}
+
+/* ---------- week: stats strip ---------- */
+
+.week-stats {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.4fr);
+  gap: 18px;
+  transition: opacity 160ms ease;
+}
+
+/* a popped-out day is only ever as wide as one column, so it never covers
+ * the whole strip below it — hide the strip's text outright the moment any
+ * day is expanded, instead of leaving whatever it doesn't physically
+ * overlap still readable */
+.cal:has(.col:hover) .week-stats {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.week-stat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.week-stat-value {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  text-transform: capitalize;
+}
+
+.week-stat-label {
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--ink-faint);
+}
+
+.week-stat-kinds { gap: 6px; }
+
+.week-kinds {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.week-kind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.week-kind i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+
+.week-kind span { flex: 1; min-width: 0; }
+
+.week-kind b {
+  font-weight: 400;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .week-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* ---------- month ---------- */
