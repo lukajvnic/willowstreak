@@ -1,4 +1,5 @@
 import { useState } from "react";
+import ActivityBubbles from "./components/ActivityBubbles";
 import Heatmap from "./components/Heatmap";
 import NewHabit from "./components/NewHabit";
 import Leaderboard from "./components/Leaderboard";
@@ -49,6 +50,8 @@ export default function App() {
 
       {tab === "habits" && (
         <>
+          <ActivityBubbles />
+
           <button className="add-habit" type="button" onClick={() => setAdding(true)}>
             new habit
           </button>
