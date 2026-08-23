@@ -1,24 +1,37 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  categoryUid,
   KINDS,
   kindInfo,
+  LABEL_TAG,
   shiftKey,
   todayKey,
   uid,
+  type Category,
   type Kind,
   type Reminder,
 } from "../lib/todos";
 
-type Props = { onAdd: (r: Reminder) => void; onClose: () => void };
+type Props = {
+  categories: Category[];
+  onAdd: (r: Reminder) => void;
+  onCreateCategory: (c: Category) => void;
+  onClose: () => void;
+};
 
-export default function AddReminder({ onAdd, onClose }: Props) {
+export default function AddReminder({ categories, onAdd, onCreateCategory, onClose }: Props) {
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<Kind | null>(null);
+  const [category, setCategory] = useState<string | null>(null);
   const [start, setStart] = useState(todayKey());
   const [end, setEnd] = useState(shiftKey(todayKey(), 7));
   const [time, setTime] = useState("09:00");
   const [place, setPlace] = useState("");
+  const [creatingCat, setCreatingCat] = useState(false);
+  const [newIcon, setNewIcon] = useState("");
+  const [newName, setNewName] = useState("");
   const titleRef = useRef<HTMLInputElement>(null);
+  const newNameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     titleRef.current?.focus();
@@ -29,10 +42,14 @@ export default function AddReminder({ onAdd, onClose }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  useEffect(() => {
+    if (creatingCat) newNameRef.current?.focus();
+  }, [creatingCat]);
+
   const named = title.trim().length > 0;
 
   function save(k: Kind) {
-    const base = { id: uid(), title: title.trim(), kind: k, done: false };
+    const base = { id: uid(), title: title.trim(), kind: k, done: false, categoryId: category ?? undefined };
     if (k === "floater") {
       const [a, b] = start <= end ? [start, end] : [end, start];
       onAdd({ ...base, start: a, end: b });
@@ -49,6 +66,17 @@ export default function AddReminder({ onAdd, onClose }: Props) {
     if (!named) return titleRef.current?.focus();
     if (kindInfo(k).needs === "nothing") return save(k);
     setKind(k);
+  }
+
+  function commitCategory() {
+    const name = newName.trim();
+    if (!name) return newNameRef.current?.focus();
+    const c: Category = { id: categoryUid(), name, icon: newIcon.trim() || LABEL_TAG };
+    onCreateCategory(c);
+    setCategory(c.id);
+    setNewIcon("");
+    setNewName("");
+    setCreatingCat(false);
   }
 
   return (
@@ -68,6 +96,64 @@ export default function AddReminder({ onAdd, onClose }: Props) {
           placeholder="what is it?"
           aria-label="title"
         />
+
+        <p className="add-label">category — optional</p>
+
+        <div className="cats" role="group" aria-label="category">
+          {categories.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              className="cat-pick"
+              data-picked={c.id === category}
+              onClick={() => setCategory((cur) => (cur === c.id ? null : c.id))}
+            >
+              <span className="cat-pick-icon">{c.icon}</span>
+              {c.name}
+            </button>
+          ))}
+
+          {creatingCat ? (
+            <span className="cat-new">
+              <input
+                className="cat-new-icon"
+                value={newIcon}
+                onChange={(e) => setNewIcon(e.target.value)}
+                placeholder={LABEL_TAG}
+                maxLength={4}
+                aria-label="new category icon — paste any emoji"
+              />
+              <input
+                ref={newNameRef}
+                className="cat-new-name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && commitCategory()}
+                placeholder="name it"
+                aria-label="new category name"
+              />
+              <button type="button" className="cat-new-save" onClick={commitCategory} aria-label="save category">
+                ✓
+              </button>
+              <button
+                type="button"
+                className="cat-new-cancel"
+                onClick={() => {
+                  setCreatingCat(false);
+                  setNewIcon("");
+                  setNewName("");
+                }}
+                aria-label="cancel new category"
+              >
+                ×
+              </button>
+            </span>
+          ) : (
+            <button type="button" className="cat-pick cat-pick-new" onClick={() => setCreatingCat(true)}>
+              + new
+            </button>
+          )}
+        </div>
 
         <p className="add-label">how do you want to hold it?</p>
 

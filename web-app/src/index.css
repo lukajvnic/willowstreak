@@ -1486,6 +1486,39 @@ div.today .today-line {
 .filter-chip span { color: var(--ink-faint); margin-left: 5px; }
 .filter-chip:hover { background: rgba(255, 255, 255, 0.09); color: var(--ink); }
 
+.cat-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0 0 14px 4px;
+}
+
+.cat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-soft);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease, border-color 130ms ease;
+}
+
+.cat-chip:hover { background: rgba(255, 255, 255, 0.09); color: var(--ink); }
+
+.cat-chip[data-active="true"] {
+  color: var(--ink);
+  background: var(--dune-lift);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.cat-chip-icon { font-size: 12px; line-height: 1; }
+
 .reminder-scroll {
   display: flex;
   flex-direction: column;
@@ -1625,6 +1658,11 @@ div.today .today-line {
   letter-spacing: 0.05em;
   color: var(--tone);
   opacity: 0.85;
+}
+
+.reminder-cat {
+  margin-right: 6px;
+  font-size: 12px;
 }
 
 .reminder-drop {
@@ -2317,6 +2355,95 @@ div.today .today-line {
   text-transform: uppercase;
   color: var(--ink-faint);
 }
+
+.cats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.cat-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--dune);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 130ms ease, border-color 130ms ease, color 130ms ease;
+}
+
+.cat-pick:hover { background: var(--dune-lift); color: var(--ink); }
+
+.cat-pick[data-picked="true"] {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: var(--dune-lift);
+  color: var(--ink);
+}
+
+.cat-pick-icon { font-size: 13px; line-height: 1; }
+
+.cat-pick-new { color: var(--ink-faint); border-style: dashed; border-color: var(--line); }
+.cat-pick-new:hover { color: var(--ink-soft); }
+
+.cat-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--dune);
+}
+
+.cat-new-icon {
+  width: 34px;
+  height: 30px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--dune-lift);
+  color: var(--ink);
+  font-size: 15px;
+  text-align: center;
+  outline: none;
+}
+
+.cat-new-name {
+  width: 96px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--dune-lift);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.cat-new-name::placeholder { color: var(--ink-faint); }
+
+.cat-new-save,
+.cat-new-cancel {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease;
+}
+
+.cat-new-save:hover { background: rgba(95, 164, 107, 0.18); color: #5FA46B; }
+.cat-new-cancel:hover { background: rgba(255, 255, 255, 0.08); color: var(--ink); }
 
 .kinds { display: flex; flex-direction: column; gap: 4px; }
 

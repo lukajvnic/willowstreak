@@ -12,7 +12,38 @@ export type Reminder = {
   /** anchor only */
   time?: string;
   place?: string;
+  /** free-form grouping — school, work, exercise... — orthogonal to kind */
+  categoryId?: string;
 };
+
+export type Category = {
+  id: string;
+  name: string;
+  /** a single emoji, picked freehand — no fixed set to choose from */
+  icon: string;
+};
+
+// written as escaped code points rather than literal glyphs — some emoji
+// (multi-byte astral-plane characters) don't survive being typed straight
+// into source reliably, so this is the safe way to pin down exactly which
+// character each one is
+const GRADUATION_CAP = "\u{1F393}"; // 🎓
+const BRIEFCASE = "\u{1F4BC}"; // πŸ’Ό
+const FLEXED_BICEPS = "\u{1F4AA}"; // πŸ’ͺ
+const BROOM = "\u{1F9F9}"; // 🧹
+const HOSPITAL = "\u{1F3E5}"; // πŸ₯
+export const LABEL_TAG = "\u{1F3F7}\u{FE0F}"; // 🏷️ — default icon for a fresh category
+
+export const DEFAULT_CATEGORIES: Category[] = [
+  { id: "school", name: "school", icon: GRADUATION_CAP },
+  { id: "work", name: "work", icon: BRIEFCASE },
+  { id: "exercise", name: "exercise", icon: FLEXED_BICEPS },
+  { id: "chores", name: "chores", icon: BROOM },
+  { id: "health", name: "health", icon: HOSPITAL },
+];
+
+let catSeq = 0;
+export const categoryUid = () => `cat${++catSeq}`;
 
 export type KindInfo = {
   id: Kind;
@@ -210,15 +241,15 @@ export const uid = () => `r${++seq}`;
 export function seedReminders(): Reminder[] {
   const t = todayKey();
   return [
-    { id: uid(), title: "dentist — cleaning", kind: "anchor", done: false, start: shiftKey(t, 2), time: "09:30", place: "dr. amari, king st" },
-    { id: uid(), title: "standup with the design team", kind: "anchor", done: false, start: shiftKey(t, 5), time: "14:00", place: "zoom" },
+    { id: uid(), title: "dentist — cleaning", kind: "anchor", done: false, start: shiftKey(t, 2), time: "09:30", place: "dr. amari, king st", categoryId: "health" },
+    { id: uid(), title: "standup with the design team", kind: "anchor", done: false, start: shiftKey(t, 5), time: "14:00", place: "zoom", categoryId: "work" },
     { id: uid(), title: "flight to lisbon", kind: "anchor", done: false, start: shiftKey(t, 19), time: "07:15", place: "yyz — terminal 1" },
     { id: uid(), title: "haircut", kind: "floater", done: false, start: shiftKey(t, 1), end: shiftKey(t, 8) },
     { id: uid(), title: "renew passport", kind: "floater", done: false, start: shiftKey(t, 6), end: shiftKey(t, 24) },
-    { id: uid(), title: "swap the winter tires", kind: "floater", done: true, start: shiftKey(t, -3), end: shiftKey(t, 4) },
-    { id: uid(), title: "that thing sam mentioned about the lease", kind: "refile", done: false },
+    { id: uid(), title: "swap the winter tires", kind: "floater", done: true, start: shiftKey(t, -3), end: shiftKey(t, 4), categoryId: "chores" },
+    { id: uid(), title: "that thing sam mentioned about the lease", kind: "refile", done: false, categoryId: "chores" },
     { id: uid(), title: "look into the noise upstairs", kind: "refile", done: false },
-    { id: uid(), title: "learn to sail", kind: "backlog", done: false },
-    { id: uid(), title: "repaint the hallway", kind: "backlog", done: false },
+    { id: uid(), title: "learn to sail", kind: "backlog", done: false, categoryId: "exercise" },
+    { id: uid(), title: "repaint the hallway", kind: "backlog", done: false, categoryId: "chores" },
   ];
 }

@@ -3,6 +3,7 @@ import AddReminder from "./AddReminder";
 import Calendar from "./Calendar";
 import {
   covers,
+  DEFAULT_CATEGORIES,
   fmtDay,
   fmtTime,
   kindInfo,
@@ -11,6 +12,7 @@ import {
   shiftKey,
   sortReminders,
   todayKey,
+  type Category,
   type Kind,
   type Reminder,
   type SortMode,
@@ -22,6 +24,9 @@ const SECTION: Record<Kind, string> = {
   refile: "refile",
   backlog: "backlog",
 };
+
+/** filter sentinel — reminders with no categoryId at all, distinct from "no filter" */
+const UNCATEGORIZED = "__none__";
 
 /** near days read better as words */
 function dayLabel(key: string): string {
@@ -44,13 +49,14 @@ function meta(r: Reminder): string | null {
 
 type RowProps = {
   r: Reminder;
+  category: Category | undefined;
   /** in one merged list the section headings are gone, so each row names its own kind */
   showKind: boolean;
   onToggle: (id: string) => void;
   onDrop: (id: string) => void;
 };
 
-function Row({ r, showKind, onToggle, onDrop }: RowProps) {
+function Row({ r, category, showKind, onToggle, onDrop }: RowProps) {
   const detail = meta(r);
 
   return (
@@ -72,7 +78,14 @@ function Row({ r, showKind, onToggle, onDrop }: RowProps) {
       </button>
 
       <span className="reminder-body">
-        <span className="reminder-title">{r.title}</span>
+        <span className="reminder-title">
+          {category && (
+            <span className="reminder-cat" title={category.name}>
+              {category.icon}
+            </span>
+          )}
+          {r.title}
+        </span>
         {(showKind || detail) && (
           <span className="reminder-meta">
             {showKind && <em className="reminder-kind">{r.kind}</em>}
@@ -91,13 +104,19 @@ function Row({ r, showKind, onToggle, onDrop }: RowProps) {
 
 export default function Todo() {
   const [reminders, setReminders] = useState<Reminder[]>(seedReminders);
+  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
   const [selected, setSelected] = useState<string | null>(null);
+  const [catFilter, setCatFilter] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [split, setSplit] = useState(true);
   const [sort, setSort] = useState<SortMode>("priority");
 
-  const shown = selected ? reminders.filter((r) => covers(r, selected)) : reminders;
+  let shown = selected ? reminders.filter((r) => covers(r, selected)) : reminders;
+  if (catFilter === UNCATEGORIZED) shown = shown.filter((r) => !r.categoryId);
+  else if (catFilter) shown = shown.filter((r) => r.categoryId === catFilter);
   const open = shown.filter((r) => !r.done).length;
+
+  const catOf = (r: Reminder) => categories.find((c) => c.id === r.categoryId);
 
   const toggle = (id: string) =>
     setReminders((prev) => prev.map((r) => (r.id === id ? { ...r, done: !r.done } : r)));
@@ -160,10 +179,43 @@ export default function Todo() {
           )}
         </div>
 
+        <div className="cat-filter" role="group" aria-label="filter by category">
+          <button
+            type="button"
+            className="cat-chip"
+            data-active={catFilter === null}
+            onClick={() => setCatFilter(null)}
+          >
+            all
+          </button>
+
+          {categories.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              className="cat-chip"
+              data-active={catFilter === c.id}
+              onClick={() => setCatFilter((cur) => (cur === c.id ? null : c.id))}
+            >
+              <span className="cat-chip-icon">{c.icon}</span>
+              {c.name}
+            </button>
+          ))}
+
+          <button
+            type="button"
+            className="cat-chip"
+            data-active={catFilter === UNCATEGORIZED}
+            onClick={() => setCatFilter((cur) => (cur === UNCATEGORIZED ? null : UNCATEGORIZED))}
+          >
+            uncategorized
+          </button>
+        </div>
+
         <div className="reminder-scroll">
           {shown.length === 0 && (
             <p className="reminders-empty">
-              {selected ? "nothing on this day" : "nothing yet — hit + to add one"}
+              {selected || catFilter ? "nothing here" : "nothing yet — hit + to add one"}
             </p>
           )}
 
@@ -183,7 +235,7 @@ export default function Todo() {
 
                   <ul className="reminder-list">
                     {group.map((r) => (
-                      <Row key={r.id} r={r} showKind={false} onToggle={toggle} onDrop={drop} />
+                      <Row key={r.id} r={r} category={catOf(r)} showKind={false} onToggle={toggle} onDrop={drop} />
                     ))}
                   </ul>
                 </div>
@@ -192,7 +244,7 @@ export default function Todo() {
           ) : (
             <ul className="reminder-list">
               {sortReminders(shown, sort).map((r) => (
-                <Row key={r.id} r={r} showKind onToggle={toggle} onDrop={drop} />
+                <Row key={r.id} r={r} category={catOf(r)} showKind onToggle={toggle} onDrop={drop} />
               ))}
             </ul>
           )}
@@ -203,7 +255,9 @@ export default function Todo() {
 
       {adding && (
         <AddReminder
+          categories={categories}
           onAdd={(r) => setReminders((prev) => [...prev, r])}
+          onCreateCategory={(c) => setCategories((prev) => [...prev, c])}
           onClose={() => setAdding(false)}
         />
       )}
