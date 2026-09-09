@@ -1,32 +1,49 @@
-from typing import Annotated
+from datetime import date
+from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from supabase import Client
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.dependencies import get_current_user_client
+from app.core.errors import ApiError
 from app.modules.habits.controller import (
     archive_habit_controller,
     create_habit_controller,
     list_habits_controller,
+    list_habits_with_entries_controller,
     update_habit_controller,
 )
 from app.modules.habits.schemas import (
     HabitCreateRequest,
     HabitResponse,
     HabitsListResponse,
+    HabitsWithEntriesResponse,
     HabitUpdateRequest,
 )
 
 router = APIRouter()
 
 
-@router.get("/habits", response_model=HabitsListResponse)
+@router.get("/habits", response_model=HabitsWithEntriesResponse | HabitsListResponse)
 def list_habits(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     client: Annotated[Client, Depends(get_current_user_client)],
-) -> HabitsListResponse:
+    include: Annotated[Literal["entries"] | None, Query()] = None,
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
+) -> HabitsWithEntriesResponse | HabitsListResponse:
+    if include == "entries":
+        if date_from is None or date_to is None:
+            raise ApiError(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                code="missing_entries_range",
+                message="include=entries needs both 'from' and 'to'",
+            )
+        return list_habits_with_entries_controller(
+            current_user=current_user, client=client, date_from=date_from, date_to=date_to
+        )
     return list_habits_controller(current_user=current_user, client=client)
 
 

@@ -277,3 +277,47 @@ def test_zero_value_does_not_count_toward_a_streak(client):
     hid = make_habit(client)
     client.put(f"/api/habits/{hid}/entries/{TODAY.isoformat()}", json={"value": 0})
     assert client.get("/api/me/stats").json()["stats"]["streak"] == 0
+
+
+# ------------------------------------------- habits + entries in one request
+
+def test_include_entries_returns_each_habits_entries(client):
+    register(client)
+    gym = make_habit(client, "gym")
+    push = make_habit(client, "push-ups", "count", goal=100, unit="reps")
+    for offset in range(3):
+        day = (TODAY - dt.timedelta(days=offset)).isoformat()
+        client.put(f"/api/habits/{gym}/entries/{day}", json={"value": 1})
+
+    since = (TODAY - dt.timedelta(days=30)).isoformat()
+    r = client.get(f"/api/habits?include=entries&from={since}&to={TODAY.isoformat()}")
+    assert r.status_code == 200
+    habits = {h["id"]: h for h in r.json()["habits"]}
+    assert len(habits[gym]["entries"]) == 3
+    assert habits[push]["entries"] == []
+
+
+def test_include_entries_trims_to_range_and_sorts(client):
+    register(client)
+    hid = make_habit(client)
+    for offset in range(5):  # inserted newest-first, so sorting is exercised
+        day = (TODAY - dt.timedelta(days=offset)).isoformat()
+        client.put(f"/api/habits/{hid}/entries/{day}", json={"value": 1})
+
+    since = (TODAY - dt.timedelta(days=1)).isoformat()
+    habits = client.get(
+        f"/api/habits?include=entries&from={since}&to={TODAY.isoformat()}"
+    ).json()["habits"]
+    dates = [e["entry_date"] for e in habits[0]["entries"]]
+    assert len(dates) == 2 and dates == sorted(dates)
+
+
+def test_include_entries_requires_a_range(client):
+    register(client)
+    assert client.get("/api/habits?include=entries").status_code == 422
+
+
+def test_plain_habit_list_carries_no_entries(client):
+    register(client)
+    make_habit(client)
+    assert "entries" not in client.get("/api/habits").json()["habits"][0]

@@ -159,6 +159,8 @@ a running streak. Entries with `value = 0` don't count toward one.
 
 ```
 GET    /api/habits           -> {habits: [...]}   (yours, unarchived)
+GET    /api/habits?include=entries&from=YYYY-MM-DD&to=YYYY-MM-DD
+                             -> {habits: [{..., entries: [...]}]}  (one round trip)
 POST   /api/habits           -> 201 {habit}
 PATCH  /api/habits/{id}      -> {habit}
 DELETE /api/habits/{id}      -> 204               (soft — entries survive)

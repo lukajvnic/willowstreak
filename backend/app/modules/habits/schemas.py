@@ -3,6 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.modules.entries.schemas import EntryData
 from app.modules.users.schemas import HabitType
 
 
@@ -52,3 +53,11 @@ class HabitResponse(BaseModel):
 
 class HabitsListResponse(BaseModel):
     habits: list[HabitData]
+
+
+class HabitWithEntriesData(HabitData):
+    entries: list[EntryData] = []
+
+
+class HabitsWithEntriesResponse(BaseModel):
+    habits: list[HabitWithEntriesData]

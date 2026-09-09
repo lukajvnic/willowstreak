@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Any
 
 from fastapi import status
@@ -9,10 +10,12 @@ from app.modules.habits.schemas import (
     HabitCreateRequest,
     HabitData,
     HabitUpdateRequest,
+    HabitWithEntriesData,
 )
 from app.modules.users.schemas import HabitType
 
 HABITS_TABLE = "habits"
+ENTRIES_TABLE = "habit_entries"  # not imported: entries.service imports this module
 POSTGRES_CHECK_VIOLATION = "23514"
 
 
@@ -147,3 +150,37 @@ def archive_habit(client: Client, user_id: str, habit_id: str) -> None:
             code="habit_archive_failed",
             message="Habit could not be archived",
         ) from exc
+
+
+def list_habits_with_entries(
+    client: Client, user_id: str, date_from: date, date_to: date
+) -> list[HabitWithEntriesData]:
+    """Habits plus their entries in one PostgREST round trip (embedded select),
+    instead of one entries query per habit."""
+    try:
+        response = (
+            client.table(HABITS_TABLE)
+            .select(f"*, {ENTRIES_TABLE}(*)")
+            .eq("user_id", user_id)
+            .is_("archived_at", "null")
+            # dotted filters trim the embedded rows, never the parent habits
+            .gte(f"{ENTRIES_TABLE}.entry_date", date_from.isoformat())
+            .lte(f"{ENTRIES_TABLE}.entry_date", date_to.isoformat())
+            .order("created_at")
+            .execute()
+        )
+    except APIError as exc:
+        raise ApiError(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            code="habits_fetch_failed",
+            message="Habits could not be loaded",
+        ) from exc
+
+    habits: list[HabitWithEntriesData] = []
+    for row in response.data or []:
+        row = {**row, "entries": row.get(ENTRIES_TABLE) or []}
+        habit = HabitWithEntriesData.model_validate(row)
+        # embed order is unspecified in PostgREST; the grid wants chronological
+        habit.entries.sort(key=lambda e: e.entry_date)
+        habits.append(habit)
+    return habits

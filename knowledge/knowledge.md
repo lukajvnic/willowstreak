@@ -104,6 +104,10 @@ Every read and write goes through PostgREST via `supabase-py`, mirroring the
 structure of `~/dev/Syllavise/backend`. Migrations live at `supabase/migrations/`;
 full endpoint reference in `backend/README.md`.
 
+`GET /api/habits?include=entries&from&to` returns every habit with its entries
+embedded (PostgREST embedded select, one round trip) — that's the habits-page
+load path; the per-habit entries route stays for single-habit use.
+
 **v1 scope is users + habits + habit entries.** Friendships and leaderboards are
 not in it. Note the frontend leaderboard page still runs on the mock
 `BOARDS`/`PEOPLE` arrays; there is no server behind it.

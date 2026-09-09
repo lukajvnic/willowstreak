@@ -11,11 +11,14 @@ by tests/test_rls.py against a real Postgres.
 from __future__ import annotations
 
 import itertools
+import re
 import uuid
 from datetime import UTC, date, datetime
 from typing import Any
 
 from postgrest import APIError
+
+EMBED_FK = {"habit_entries": "habit_id"}
 
 UNIQUE_VIOLATION = "23505"
 CHECK_VIOLATION = "23514"
@@ -44,6 +47,7 @@ class _Query:
         self._on_conflict: list[str] = []
         self._single = False
         self._order: str | None = None
+        self._embed: str | None = None
 
     # ---- filters
     def eq(self, column: str, value: Any) -> _Query:
@@ -63,8 +67,12 @@ class _Query:
         return self
 
     # ---- verbs
-    def select(self, *_columns: str) -> _Query:
+    def select(self, *columns: str) -> _Query:
         self._op = "select"
+        for col in columns:
+            m = re.search(r"(\w+)\(\*\)", col)
+            if m:
+                self._embed = m.group(1)
         return self
 
     def insert(self, payload: dict) -> _Query:
@@ -96,6 +104,8 @@ class _Query:
     # ---- execution
     def _matches(self, row: dict) -> bool:
         for kind, column, value in self._filters:
+            if "." in column:  # dotted filters apply to the embedded rows
+                continue
             actual = row.get(column)
             if kind == "eq" and str(actual) != str(value):
                 return False
@@ -116,6 +126,8 @@ class _Query:
             hits = [r for r in rows if self._matches(r)]
             if self._order:
                 hits.sort(key=lambda r: str(r.get(self._order) or ""))
+            if self._embed:
+                hits = [self._with_embed(r) for r in hits]
             if self._single:
                 return _Response(hits[0] if hits else None)
             return _Response(hits)
@@ -145,6 +157,32 @@ class _Query:
             return _Response(hits)
 
         raise AssertionError(f"unsupported op {self._op}")
+
+    # ---- embedding
+    def _embed_matches(self, row: dict) -> bool:
+        for kind, column, value in self._filters:
+            if "." not in column:
+                continue
+            table, col = column.split(".", 1)
+            if table != self._embed:
+                continue
+            actual = row.get(col)
+            if kind == "eq" and str(actual) != str(value):
+                return False
+            if kind == "gte" and (actual is None or str(actual) < str(value)):
+                return False
+            if kind == "lte" and (actual is None or str(actual) > str(value)):
+                return False
+        return True
+
+    def _with_embed(self, row: dict) -> dict:
+        fk = EMBED_FK[self._embed]
+        children = [
+            e
+            for e in self._db.tables.get(self._embed, [])
+            if str(e.get(fk)) == str(row.get("id")) and self._embed_matches(e)
+        ]
+        return {**row, self._embed: children}
 
 
 class _Rpc:
