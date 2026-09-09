@@ -1,0 +1,8 @@
+{
+  "name": "willo",
+  "private": true,
+  "description": "Supabase CLI for schema migrations. The app itself lives in web-app/ and backend/.",
+  "devDependencies": {
+    "supabase": "^2.101.0"
+  }
+}
