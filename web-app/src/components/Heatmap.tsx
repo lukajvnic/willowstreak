@@ -23,17 +23,27 @@ type Props = {
   cell?: number;
   /** someone else's habit — stats still read, but their days aren't yours to log */
   readOnly?: boolean;
+  /** day index -> amount from the server. when present the seeded mock series is off */
+  entries?: Record<number, number>;
+  /** fires with the cell's date whenever a day is logged or changed */
+  onLog?: (date: Date, value: number) => void;
 };
 
 type Open = { index: number; centerX: number; panelWidth: number; top: number };
 
-export default function Heatmap({ habit, seed, weeks = WEEKS, cell = 14, readOnly = false }: Props) {
+export default function Heatmap({ habit, seed, weeks = WEEKS, cell = 14, readOnly = false, entries, onLog }: Props) {
   // day index -> amount, for days you've touched. everything else shows the seeded value
   const [edits, setEdits] = useState<Record<number, number>>({});
   const [open, setOpen] = useState<Open | null>(null);
   const panelRef = useRef<HTMLElement>(null);
 
-  const series = useMemo(() => buildSeries(seed, habit, weeks), [seed, habit, weeks]);
+  const series = useMemo(() => {
+    if (!entries) return buildSeries(seed, habit, weeks);
+    return Array.from({ length: weeks * 7 }, (_, i) => {
+      const amount = entries[i] ?? 0;
+      return { level: levelFor(amount, habit.goal), amount };
+    });
+  }, [entries, seed, habit, weeks]);
   const dates = useMemo(() => gridDates(weeks), [weeks]);
   const months = useMemo(() => monthLabels(dates, weeks), [dates, weeks]);
   const today = useMemo(() => todayIndex(weeks), [weeks]);
@@ -82,6 +92,11 @@ export default function Heatmap({ habit, seed, weeks = WEEKS, cell = 14, readOnl
       panelWidth: p.width,
       top: c.top - p.top - 8,
     });
+  };
+
+  const logDay = (i: number, v: number) => {
+    setEdits((e) => ({ ...e, [i]: v }));
+    onLog?.(dates[i], v);
   };
 
   const rampVars = {
@@ -160,7 +175,7 @@ export default function Heatmap({ habit, seed, weeks = WEEKS, cell = 14, readOnl
           <HabitToday
             habit={habit}
             value={days[today].amount}
-            onSet={(v) => setEdits((e) => ({ ...e, [today]: v }))}
+            onSet={(v) => logDay(today, v)}
           />
         )}
       </div>
@@ -173,7 +188,7 @@ export default function Heatmap({ habit, seed, weeks = WEEKS, cell = 14, readOnl
           centerX={open.centerX}
           panelWidth={open.panelWidth}
           top={open.top}
-          onSet={(v) => setEdits((e) => ({ ...e, [open.index]: v }))}
+          onSet={(v) => logDay(open.index, v)}
         />
       )}
     </section>

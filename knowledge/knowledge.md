@@ -5,7 +5,7 @@ the knowledge directory is for ai agents to store context about the project
 - `web-app/` — vite + react 19 + ts. no router; `src/App.tsx` holds a `tab` state and the nav (`habits`, `to-do`, `leaderboard`, `social`, `avatar`).
 - `backend/`, `ios-app/` — early, mostly empty.
 - styling is one hand-written stylesheet, `web-app/src/index.css`. no css modules, no tailwind. class names are plain and global (`.panel`, `.heatmap`, `.cell`). colour ramps come in per-habit as css vars (`--c0`..`--c4`) set inline by `Heatmap`.
-- habit data is mock/deterministic: `src/lib/habits.ts` seeds each grid with `buildGrid(seed, density)` so grids stay stable across renders. no backend calls yet.
+- the habits tab is live against the backend: `src/lib/auth.tsx` (supabase-js session + profile), `src/components/AuthGate.tsx` (login/signup/pick-username), `src/lib/habitsApi.ts` (one `include=entries` fetch, create, upsert-on-log). `Heatmap` takes `entries` + `onLog` props for real data and still falls back to the seeded mock series (`buildSeries`) when they're absent — friends' grids in `ProfileModal` and the leaderboard/social tabs stay mock. habit colour ramps are client-side only (localStorage by habit id, name-hash fallback).
 
 ## habits page
 

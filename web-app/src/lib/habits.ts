@@ -1,4 +1,6 @@
 export type Habit = {
+  /** server id — absent on mock habits (friends' grids, tests) */
+  id?: string;
   name: string;
   meta: string;
   /** css color ramp, lightest -> darkest */

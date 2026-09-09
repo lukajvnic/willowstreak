@@ -7,9 +7,9 @@ import { ME, toneFor, type Person } from "../lib/people";
 import { AvatarPreview } from "../lib/avatarKit";
 import { useAvatarState } from "../lib/AvatarContext";
 
-type Props = { person: Person; onClose: () => void };
+type Props = { person: Person; onClose: () => void; onSignOut?: () => void };
 
-export default function ProfileModal({ person, onClose }: Props) {
+export default function ProfileModal({ person, onClose, onSignOut }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -86,6 +86,12 @@ export default function ProfileModal({ person, onClose }: Props) {
             );
           })}
         </div>
+
+        {isMe && onSignOut && (
+          <button className="auth-alt profile-signout" type="button" onClick={onSignOut}>
+            sign out
+          </button>
+        )}
       </div>
     </div>
   );
