@@ -195,3 +195,19 @@ returning only the email for a given username, rate-limited) — not a frontend 
 
 Every auth event and API call is logged on-page with the raw response body, which
 is the whole reason the app exists.
+
+
+## hosting
+
+Vercel, two projects off github `lukajvnic/willowstreak` (repo was renamed from
+`willo`; local remote updated). Every push to main auto-deploys production.
+
+- `willo-api` — root `backend/`, FastAPI as a python serverless function
+  (`backend/api/index.py` exposes the app, `backend/vercel.json` rewrites all
+  paths to it, `backend/requirements.txt` exported from uv.lock because the
+  builder doesn't read pyproject). env: SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY,
+  ENVIRONMENT, BACKEND_CORS_ORIGINS (frontend url).
+- `willo` — root `web-app/`, zero-config vite build. env: VITE_SUPABASE_URL,
+  VITE_SUPABASE_ANON_KEY, VITE_API_URL (api url).
+- supabase auth Site URL must point at the hosted frontend or confirmation
+  emails redirect to localhost.
