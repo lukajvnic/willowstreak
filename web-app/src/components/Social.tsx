@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import Avatar from "./Avatar";
 import ProfileModal from "./ProfileModal";
 import { ACTIVITIES, PEOPLE, toneFor, type Person } from "../lib/people";
+import { useAuth } from "../lib/auth";
+import { displayName, getUserCard, searchUsers, type AccountHit } from "../lib/usersApi";
 
 type Event = { id: number; name: string; text: string; at: number };
 
@@ -26,7 +28,11 @@ function randomEvent(id: number, at: number): Event {
 const SEED_COUNT = 7;
 
 export default function Social() {
+  const { session } = useAuth();
+  const token = session?.access_token;
   const [query, setQuery] = useState("");
+  const [results, setResults] = useState<AccountHit[]>([]);
+  const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<Person | null>(null);
   const nextId = useRef(SEED_COUNT);
   const [events, setEvents] = useState<Event[]>(() => {
@@ -49,10 +55,34 @@ export default function Social() {
     };
   }, []);
 
-  const q = query.trim().toLowerCase();
-  const results = q
-    ? PEOPLE.filter((p) => p.name.includes(q) || p.handle.toLowerCase().includes(q))
-    : [];
+  // usernames are [a-z0-9_], so the query collapses to that before it's sent
+  const q = query.trim().toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20);
+
+  useEffect(() => {
+    if (!q || !token) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const timer = setTimeout(() => {
+      searchUsers(token, q)
+        .then(setResults)
+        .catch(() => setResults([]))
+        .finally(() => setSearching(false));
+    }, 200); // debounce — one request per pause, not per keystroke
+    return () => clearTimeout(timer);
+  }, [q, token]);
+
+  const openCard = (hit: AccountHit) => {
+    if (!token) return;
+    getUserCard(token, hit.id)
+      .then((person) => {
+        setSelected(person);
+        setQuery("");
+      })
+      .catch((err) => console.error("card load failed", err));
+  };
 
   return (
     <div className="social">
@@ -82,27 +112,26 @@ export default function Social() {
           <div className="feed-head">
             <span className="feed-title">accounts</span>
             <span className="feed-count">
-              {results.length} {results.length === 1 ? "match" : "matches"}
+              {searching ? "searching…" : `${results.length} ${results.length === 1 ? "match" : "matches"}`}
             </span>
           </div>
 
           <ul className="results">
-            {results.length === 0 && <li className="result-empty">no accounts found</li>}
-            {results.map((p) => (
-              <li key={p.handle}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelected(p);
-                    setQuery("");
-                  }}
-                >
-                  <Avatar name={p.name} tone={toneFor(p.name)} size={30} />
-                  <span className="result-name">{p.name}</span>
-                  <span className="result-handle">{p.handle}</span>
-                </button>
-              </li>
-            ))}
+            {results.length === 0 && !searching && (
+              <li className="result-empty">no accounts found</li>
+            )}
+            {results.map((u) => {
+              const name = displayName(u) || u.username;
+              return (
+                <li key={u.id}>
+                  <button type="button" onClick={() => openCard(u)}>
+                    <Avatar name={name} tone={toneFor(name)} size={30} />
+                    <span className="result-name">{name}</span>
+                    <span className="result-handle">@{u.username}</span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : (

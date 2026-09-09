@@ -6,6 +6,8 @@ from supabase import Client
 
 from app.core.errors import ApiError
 from app.modules.users.schemas import (
+    PublicUserData,
+    UserCardData,
     UserCreateRequest,
     UserData,
     UserStats,
@@ -128,3 +130,37 @@ def get_stats(client: Client) -> UserStats:
     if not rows:
         return UserStats(streak=0, best=0, tracked=0)
     return UserStats.model_validate(rows[0])
+
+
+def search_users(client: Client, prefix: str) -> list[PublicUserData]:
+    """Startswith match on username via a security-definer RPC — RLS hides
+    every row but the caller's, and the function returns only public fields."""
+    try:
+        response = client.rpc("search_users", {"p_prefix": prefix}).execute()
+    except APIError as exc:
+        raise ApiError(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            code="user_search_failed",
+            message="Accounts could not be searched",
+        ) from exc
+    return [PublicUserData.model_validate(row) for row in (response.data or [])]
+
+
+def get_user_card(client: Client, user_id: str) -> UserCardData:
+    try:
+        response = client.rpc("get_user_card", {"p_user_id": user_id}).execute()
+    except APIError as exc:
+        raise ApiError(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            code="user_card_failed",
+            message="Profile card could not be loaded",
+        ) from exc
+
+    rows = response.data or []
+    if not rows:
+        raise ApiError(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="user_not_found",
+            message="User not found",
+        )
+    return UserCardData.model_validate(rows[0])

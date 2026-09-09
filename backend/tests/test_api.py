@@ -321,3 +321,54 @@ def test_plain_habit_list_carries_no_entries(client):
     register(client)
     make_habit(client)
     assert "entries" not in client.get("/api/habits").json()["habits"][0]
+
+
+# ----------------------------------------------------------------- account search
+
+def test_search_matches_username_prefix_only(client, sign_in):
+    register(client, "luka")
+    other = sign_in()
+    register(other, "lucia", first="Lucia")
+    third = sign_in()
+    register(third, "annaluka", first="Anna")  # contains but doesn't start with
+
+    r = third.get("/api/users?search=lu")
+    assert r.status_code == 200
+    names = [u["username"] for u in r.json()["users"]]
+    assert names == ["lucia", "luka"]
+
+
+def test_search_rejects_bad_characters(client):
+    register(client)
+    assert client.get("/api/users?search=Lu%20ka").status_code == 422
+    assert client.get("/api/users?search=%25").status_code == 422
+
+
+def test_search_finds_yourself_too(client):
+    me = register(client, "solo")
+    r = client.get("/api/users?search=solo")
+    assert [u["id"] for u in r.json()["users"]] == [me["id"]]
+
+
+def test_user_card_carries_profile_and_stats(client, sign_in):
+    register(client, "runner", first="Ren")
+    hid = make_habit(client, "run")
+    for offset in range(3):
+        day = (TODAY - dt.timedelta(days=offset)).isoformat()
+        client.put(f"/api/habits/{hid}/entries/{day}", json={"value": 1})
+
+    viewer = sign_in()
+    register(viewer, "viewer")
+    target = viewer.get("/api/users?search=runner").json()["users"][0]["id"]
+    card = viewer.get(f"/api/users/{target}/card").json()["card"]
+    assert card["username"] == "runner" and card["first_name"] == "Ren"
+    assert card["streak"] == 3 and card["best"] == 3 and card["tracked"] == 1
+    # the card never carries the habits themselves
+    assert "habits" not in card and "entries" not in card
+
+
+def test_user_card_unknown_user_is_404(client):
+    register(client)
+    import uuid as _uuid
+
+    assert client.get(f"/api/users/{_uuid.uuid4()}/card").status_code == 404

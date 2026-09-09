@@ -41,6 +41,36 @@ class UserResponse(BaseModel):
     user: UserData
 
 
+class PublicUserData(BaseModel):
+    """What search_users() returns — the fields anyone may see."""
+
+    id: UUID
+    username: str
+    first_name: str
+    last_name: str
+    avatar: dict | None = None
+    avatar_path: str | None = None
+
+
+class UserSearchResponse(BaseModel):
+    users: list[PublicUserData]
+
+
+class UserCardData(PublicUserData):
+    """The full profile card: public fields plus activity numbers. No habit
+    names or entries — the card shows that someone is active, not what they do."""
+
+    bio: str = ""
+    created_at: datetime | None = None
+    streak: int
+    best: int
+    tracked: int
+
+
+class UserCardResponse(BaseModel):
+    card: UserCardData
+
+
 class UsernameAvailableResponse(BaseModel):
     available: bool
 

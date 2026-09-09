@@ -138,6 +138,8 @@ POST  /api/me   {username, first_name, last_name?, bio?}
 PATCH /api/me   {first_name?, last_name?, bio?, avatar_path?}  -> {user}
 GET   /api/me/stats                        -> {stats}
 GET   /api/usernames/{username}/available  -> {"available": bool}
+GET   /api/users?search=<prefix>            -> {users: [...]}  (username startswith)
+GET   /api/users/{id}/card                  -> {card}  (public profile + streak/best/tracked)
 ```
 
 `404` on `GET /api/me` is **not an error** — it's how you know to show a username

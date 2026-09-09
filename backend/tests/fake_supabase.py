@@ -198,6 +198,31 @@ class _Rpc:
             return _Response(not taken)
         if self._name == "get_my_stats":
             return _Response([self._db.stats()])
+        if self._name == "search_users":
+            prefix = self._params["p_prefix"]
+            if not re.fullmatch(r"[a-z0-9_]{1,20}", prefix):
+                return _Response([])
+            hits = sorted(
+                (u for u in self._db.tables.get("users", [])
+                 if u["username"].startswith(prefix)),
+                key=lambda u: u["username"],
+            )[:20]
+            public = ("id", "username", "first_name", "last_name", "avatar", "avatar_path")
+            return _Response([{k: u.get(k) for k in public} for u in hits])
+        if self._name == "get_user_card":
+            target = str(self._params["p_user_id"])
+            user = next(
+                (u for u in self._db.tables.get("users", []) if str(u["id"]) == target),
+                None,
+            )
+            if user is None:
+                return _Response([])
+            card = {k: user.get(k) for k in (
+                "id", "username", "first_name", "last_name", "bio",
+                "avatar", "avatar_path", "created_at",
+            )}
+            card.setdefault("bio", "")
+            return _Response([{**card, **self._db.stats(target)}])
         raise AssertionError(f"unknown rpc {self._name}")
 
 
@@ -242,17 +267,18 @@ class FakeDB:
         self.tables[table].append(row)
         return row
 
-    def stats(self) -> dict:
+    def stats(self, user_id: str | None = None) -> dict:
         """Same rules as get_my_stats(): consecutive days with value > 0, a run
         counts as current if it reaches yesterday."""
+        uid = user_id or self.current_user_id
         mine = {
             str(h["id"])
             for h in self.tables["habits"]
-            if str(h["user_id"]) == self.current_user_id
+            if str(h["user_id"]) == uid
         }
         active = [
             h for h in self.tables["habits"]
-            if str(h["user_id"]) == self.current_user_id and h.get("archived_at") is None
+            if str(h["user_id"]) == uid and h.get("archived_at") is None
         ]
         by_habit: dict[str, list[date]] = {}
         for e in self.tables["habit_entries"]:

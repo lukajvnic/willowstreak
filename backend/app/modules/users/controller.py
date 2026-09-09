@@ -2,16 +2,20 @@ from supabase import Client
 
 from app.core.auth import CurrentUser
 from app.modules.users.schemas import (
+    UserCardResponse,
     UserCreateRequest,
     UsernameAvailableResponse,
     UserResponse,
+    UserSearchResponse,
     UserStatsResponse,
     UserUpdateRequest,
 )
 from app.modules.users.service import (
     create_user,
     get_stats,
+    get_user_card,
     require_user,
+    search_users,
     update_user,
     username_available,
 )
@@ -41,3 +45,11 @@ def username_available_controller(
 
 def read_stats_controller(client: Client) -> UserStatsResponse:
     return UserStatsResponse(stats=get_stats(client))
+
+
+def search_users_controller(client: Client, prefix: str) -> UserSearchResponse:
+    return UserSearchResponse(users=search_users(client, prefix))
+
+
+def user_card_controller(client: Client, user_id: str) -> UserCardResponse:
+    return UserCardResponse(card=get_user_card(client, user_id))

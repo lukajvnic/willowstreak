@@ -108,6 +108,12 @@ full endpoint reference in `backend/README.md`.
 embedded (PostgREST embedded select, one round trip) — that's the habits-page
 load path; the per-habit entries route stays for single-habit use.
 
+Account search: `GET /api/users?search=<prefix>` (username startswith, security
+definer rpc `search_users`) and `GET /api/users/{id}/card` (public profile +
+streak/best/tracked via `get_user_card`, deliberately no habit names/entries).
+Social tab's search box is wired to these; clicking a hit opens ProfileModal
+with the real card. Migration `20260909100000_account_search.sql`.
+
 **v1 scope is users + habits + habit entries.** Friendships and leaderboards are
 not in it. Note the frontend leaderboard page still runs on the mock
 `BOARDS`/`PEOPLE` arrays; there is no server behind it.
