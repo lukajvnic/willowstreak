@@ -13,7 +13,7 @@ from __future__ import annotations
 import itertools
 import re
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from postgrest import APIError
@@ -223,6 +223,38 @@ class _Rpc:
             )}
             card.setdefault("bio", "")
             return _Response([{**card, **self._db.stats(target)}])
+        if self._name == "get_user_habits":
+            target = str(self._params["p_user_id"])
+            rows = sorted(
+                (h for h in self._db.tables.get("habits", [])
+                 if str(h["user_id"]) == target and h.get("archived_at") is None),
+                key=lambda h: h["created_at"],
+            )
+            return _Response(
+                [{k: h.get(k) for k in ("name", "type", "goal", "unit")} for h in rows]
+            )
+        if self._name == "get_user_grids":
+            target = str(self._params["p_user_id"])
+            lo, hi = self._params["p_from"], self._params["p_to"]
+            grids = []
+            for h in self._db.active_habits(target):
+                days = sorted(
+                    (e for e in self._db.tables["habit_entries"]
+                     if str(e["habit_id"]) == str(h["id"]) and lo <= str(e["entry_date"]) <= hi),
+                    key=lambda e: str(e["entry_date"]),
+                )
+                grids.append({
+                    **{k: h.get(k) for k in ("name", "type", "goal", "unit")},
+                    "entries": [{"entry_date": e["entry_date"], "value": e["value"]} for e in days],
+                })
+            return _Response(grids)
+        if self._name == "get_leaderboards":
+            return _Response(self._db.leaderboards(
+                date.fromisoformat(self._params["p_today"]),
+                date.fromisoformat(self._params["p_week_start"]),
+            ))
+        if self._name == "get_activity":
+            return _Response(self._db.activity(int(self._params["p_limit"])))
         raise AssertionError(f"unknown rpc {self._name}")
 
 
@@ -230,7 +262,10 @@ class FakeDB:
     """Shared row store. One per test."""
 
     def __init__(self) -> None:
-        self.tables: dict[str, list[dict]] = {"users": [], "habits": [], "habit_entries": []}
+        self.tables: dict[str, list[dict]] = {
+            "users": [], "habits": [], "habit_entries": [],
+            "reminders": [], "reminder_categories": [],
+        }
         self.current_user_id: str | None = None
 
     # -- constraint enforcement, mirroring the migration
@@ -244,6 +279,18 @@ class FakeDB:
                     raise APIError({"code": CHECK_VIOLATION, "message": "ck_goal_matches_type"})
                 if row["type"] == "completion" and goal is not None:
                     raise APIError({"code": CHECK_VIOLATION, "message": "ck_goal_matches_type"})
+            if table == "reminders":
+                start, end, at = row.get("start_date"), row.get("end_date"), row.get("at_time")
+                ok = {
+                    "refile": not (start or end or at),
+                    "backlog": not (start or end or at),
+                    "floater": bool(start and end) and str(end) >= str(start) and not at,
+                    "anchor": bool(start) and not end,
+                }.get(row.get("kind"))
+                if ok is None:
+                    raise APIError({"code": CHECK_VIOLATION, "message": "ck_reminder_kind"})
+                if not ok:
+                    raise APIError({"code": CHECK_VIOLATION, "message": "ck_reminder_dates"})
 
     def insert(self, table: str, row: dict) -> dict:
         row = {k: _resolve(v) for k, v in row.items()}
@@ -257,6 +304,10 @@ class FakeDB:
             row.setdefault("goal", None)
             row.setdefault("unit", "")
             row.setdefault("archived_at", None)
+        if table in {"reminders", "reminder_categories"} and any(
+            str(r["id"]) == str(row["id"]) for r in self.tables[table]
+        ):
+            raise APIError({"code": UNIQUE_VIOLATION, "message": f"{table}_pkey"})
         if table == "habit_entries":
             row.setdefault("updated_at", None)
             key = (str(row["habit_id"]), str(row["entry_date"]))
@@ -266,6 +317,82 @@ class FakeDB:
         self.check_constraints(table, [row])
         self.tables[table].append(row)
         return row
+
+    def active_habits(self, user_id: str) -> list[dict]:
+        return sorted(
+            (h for h in self.tables["habits"]
+             if str(h["user_id"]) == user_id and h.get("archived_at") is None),
+            key=lambda h: h["created_at"],
+        )
+
+    def _user_row(self, user_id: str) -> dict:
+        user = next(u for u in self.tables["users"] if str(u["id"]) == user_id)
+        row = {k: user.get(k) for k in (
+            "username", "first_name", "last_name", "avatar", "avatar_path",
+        )}
+        return {"user_id": user_id, **row}
+
+    def _days(self, habit: dict) -> dict[date, float]:
+        return {
+            date.fromisoformat(str(e["entry_date"])): float(e["value"])
+            for e in self.tables["habit_entries"]
+            if str(e["habit_id"]) == str(habit["id"])
+        }
+
+    def leaderboards(self, today: date, week_start: date) -> list[dict]:
+        """Same rules as get_leaderboards(): a board per habit the caller
+        tracks, matched across accounts by lowercased name (and unit, for
+        counts); streak that reaches yesterday, or the week's total."""
+        def key(h: dict) -> tuple[str, str, str]:
+            unit = h["unit"].strip().lower() if h["type"] == "count" else ""
+            return (h["name"].strip().lower(), h["type"], unit)
+
+        rows: list[dict] = []
+        seen: set[tuple[str, str, str]] = set()
+        for mine in self.active_habits(str(self.current_user_id)):
+            if key(mine) in seen:
+                continue
+            seen.add(key(mine))
+            scores: dict[str, float] = {}
+            for h in self.tables["habits"]:
+                if h.get("archived_at") is not None or key(h) != key(mine):
+                    continue
+                days = self._days(h)
+                if h["type"] == "count":
+                    score = sum(v for d, v in days.items()
+                                if week_start <= d <= week_start + timedelta(days=6))
+                else:
+                    done = {d for d, v in days.items() if v > 0 and d <= today}
+                    cursor = today if today in done else today - timedelta(days=1)
+                    score = 0
+                    while cursor in done:
+                        score += 1
+                        cursor -= timedelta(days=1)
+                uid = str(h["user_id"])
+                scores[uid] = max(scores.get(uid, 0), score)
+            for uid, score in sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))[:100]:
+                rows.append({
+                    "habit": mine["name"], "type": mine["type"], "unit": mine["unit"],
+                    **self._user_row(uid), "value": score,
+                })
+        return rows
+
+    def activity(self, limit: int) -> list[dict]:
+        habits = {str(h["id"]): h for h in self.tables["habits"]}
+        rows = []
+        for e in self.tables["habit_entries"]:
+            h = habits[str(e["habit_id"])]
+            if (str(h["user_id"]) == str(self.current_user_id)
+                    or h.get("archived_at") is not None or float(e["value"]) <= 0):
+                continue
+            rows.append({
+                "id": e["id"], **self._user_row(str(h["user_id"])),
+                "habit": h["name"], "type": h["type"], "unit": h["unit"],
+                "value": e["value"], "entry_date": e["entry_date"],
+                "logged_at": e.get("updated_at") or e["created_at"],
+            })
+        rows.sort(key=lambda r: str(r["logged_at"]), reverse=True)
+        return rows[: max(1, min(limit, 50))]
 
     def stats(self, user_id: str | None = None) -> dict:
         """Same rules as get_my_stats(): consecutive days with value > 0, a run

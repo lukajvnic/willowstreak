@@ -97,7 +97,9 @@ export default function PhotoCropper({ src, onCancel, onConfirm }: Props) {
     const sw = BOX / scale;
     const sh = BOX / scale;
     ctx.drawImage(el, sx, sy, sw, sh, 0, 0, OUT, OUT);
-    onConfirm(canvas.toDataURL("image/png"));
+    // webp keeps a cutout's transparency at a fraction of a png's size — this
+    // is the file that gets stored. a browser that can't encode it hands back png
+    onConfirm(canvas.toDataURL("image/webp", 0.86));
   };
 
   return (

@@ -1,4 +1,5 @@
-from typing import Annotated
+from datetime import date
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -6,6 +7,7 @@ from supabase import Client
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.dependencies import get_current_user_client
+from app.core.errors import ApiError
 from app.modules.users.controller import (
     create_me_controller,
     read_me_controller,
@@ -13,11 +15,15 @@ from app.modules.users.controller import (
     search_users_controller,
     update_me_controller,
     user_card_controller,
+    user_grids_controller,
+    user_habits_controller,
     username_available_controller,
 )
 from app.modules.users.schemas import (
     UserCardResponse,
     UserCreateRequest,
+    UserGridsResponse,
+    UserHabitsResponse,
     UsernameAvailableResponse,
     UserResponse,
     UserSearchResponse,
@@ -83,3 +89,25 @@ def user_card(
     client: Annotated[Client, Depends(get_current_user_client)],
 ) -> UserCardResponse:
     return user_card_controller(client=client, user_id=str(user_id))
+
+
+@router.get("/users/{user_id}/habits", response_model=UserGridsResponse | UserHabitsResponse)
+def user_habits(
+    user_id: UUID,
+    client: Annotated[Client, Depends(get_current_user_client)],
+    include: Annotated[Literal["entries"] | None, Query()] = None,
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
+) -> UserGridsResponse | UserHabitsResponse:
+    # same switch as GET /api/habits, pointed at someone else
+    if include == "entries":
+        if date_from is None or date_to is None:
+            raise ApiError(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                code="missing_entries_range",
+                message="include=entries needs both 'from' and 'to'",
+            )
+        return user_grids_controller(
+            client=client, user_id=str(user_id), date_from=date_from, date_to=date_to
+        )
+    return user_habits_controller(client=client, user_id=str(user_id))

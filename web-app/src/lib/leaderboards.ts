@@ -1,7 +1,11 @@
+import { api } from "./api";
+import { gridDates } from "./habits";
+import { isoDay } from "./habitsApi";
+import { stubOf, type AccountHit, type PersonStub } from "./usersApi";
+
 export type Entry = {
-  name: string;
+  person: PersonStub;
   value: number;
-  tone: string;
 };
 
 export type Board = {
@@ -11,38 +15,30 @@ export type Board = {
   entries: Entry[];
 };
 
-import { toneFor } from "./people";
+type ApiBoard = {
+  habit: string;
+  type: "completion" | "count";
+  unit: string;
+  entries: { user: AccountHit; value: string | number }[];
+};
 
-function build(names: string[], values: number[]): Entry[] {
-  return names.map((name, i) => ({ name, value: values[i], tone: toneFor(name) }));
+/** one board per habit you track, ranking everyone who tracks the same one:
+ * yes/no habits by current streak, counted ones by this week's total */
+export async function loadBoards(token: string): Promise<Board[]> {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // the week is the grid's own, sunday first — and in local time, like every date sent
+  const weekStart = gridDates(1)[0];
+  const res = await api(
+    `/api/leaderboards?today=${isoDay(today)}&week_start=${isoDay(weekStart)}`,
+    { token },
+  );
+  if (!res.ok) throw new Error(`leaderboards load failed (${res.status})`);
+
+  return (res.data as { boards: ApiBoard[] }).boards.map((b) => ({
+    title: b.habit,
+    metric: b.type === "completion" ? "longest current streak" : "total this week",
+    unit: b.type === "completion" ? "days" : b.unit,
+    entries: b.entries.map((e) => ({ person: stubOf(e.user), value: Number(e.value) })),
+  }));
 }
-
-export const BOARDS: Board[] = [
-  {
-    title: "gym",
-    metric: "longest current streak",
-    unit: "days",
-    entries: build(
-      ["maya oduya", "luka j", "sam reyes", "tomo ito", "amara chen", "dev patel", "nina k", "ollie brandt"],
-      [41, 33, 28, 22, 19, 14, 11, 6],
-    ),
-  },
-  {
-    title: "push-ups",
-    metric: "total this week",
-    unit: "reps",
-    entries: build(
-      ["dev patel", "amara chen", "luka j", "ollie brandt", "maya oduya", "nina k", "tomo ito", "sam reyes"],
-      [1240, 1105, 980, 870, 745, 610, 520, 415],
-    ),
-  },
-  {
-    title: "reading",
-    metric: "total this week",
-    unit: "min",
-    entries: build(
-      ["nina k", "tomo ito", "maya oduya", "sam reyes", "luka j", "amara chen", "ollie brandt", "dev patel"],
-      [520, 465, 410, 355, 300, 265, 190, 120],
-    ),
-  },
-];

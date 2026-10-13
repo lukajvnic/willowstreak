@@ -372,3 +372,302 @@ def test_user_card_unknown_user_is_404(client):
     import uuid as _uuid
 
     assert client.get(f"/api/users/{_uuid.uuid4()}/card").status_code == 404
+
+
+def test_user_habits_lists_definitions_only(client, sign_in):
+    register(client, "runner", first="Ren")
+    gym = make_habit(client, "gym")
+    make_habit(client, "reading", "count", goal=30, unit="min")
+    gone = make_habit(client, "old one")
+    client.delete(f"/api/habits/{gone}")
+    client.put(f"/api/habits/{gym}/entries/{TODAY.isoformat()}", json={"value": 1})
+    runner_id = client.user_id
+
+    viewer = sign_in()
+    register(viewer, "viewer")
+    r = viewer.get(f"/api/users/{runner_id}/habits")
+    assert r.status_code == 200
+    # archived habits are left out, and nothing but the definition comes back
+    assert r.json()["habits"] == [
+        {"name": "gym", "type": "completion", "goal": None, "unit": ""},
+        {"name": "reading", "type": "count", "goal": 30, "unit": "min"},
+    ]
+
+
+def test_user_habits_unknown_user_is_empty(client):
+    register(client)
+    import uuid as _uuid
+
+    r = client.get(f"/api/users/{_uuid.uuid4()}/habits")
+    assert r.status_code == 200 and r.json()["habits"] == []
+
+
+# ----------------------------------------------------------------- avatar
+
+def test_avatar_look_round_trips(client):
+    register(client)
+    look = {"skin": "#4A90E2", "head": "top_hat", "shirt": "rick_tee"}
+    r = client.patch("/api/me", json={"avatar": look})
+    assert r.status_code == 200 and r.json()["user"]["avatar"] == look
+    assert client.get("/api/me").json()["user"]["avatar"] == look
+
+
+def test_avatar_look_is_validated(client):
+    register(client)
+    assert client.patch("/api/me", json={"avatar": {"skin": "blue"}}).status_code == 422
+    bad_item = {"skin": "#4A90E2", "head": "../../etc"}
+    assert client.patch("/api/me", json={"avatar": bad_item}).status_code == 422
+
+
+def test_avatar_path_must_be_in_your_own_folder(client, sign_in):
+    register(client)
+    mine = f"{client.user_id}/1760000000.webp"
+    assert client.patch("/api/me", json={"avatar_path": mine}).json()["user"]["avatar_path"] == mine
+
+    other = sign_in()
+    register(other, "other")
+    for path in (mine, f"{other.user_id}/../x.webp", "loose.webp", f"{other.user_id}/"):
+        r = other.patch("/api/me", json={"avatar_path": path})
+        assert r.status_code == 422, path
+        assert r.json()["error"]["code"] == "avatar_path_not_yours"
+
+
+def test_avatar_path_null_clears_the_photo(client):
+    register(client)
+    client.patch("/api/me", json={"avatar_path": f"{client.user_id}/a.png"})
+    r = client.patch("/api/me", json={"avatar_path": None})
+    assert r.status_code == 200 and r.json()["user"]["avatar_path"] is None
+
+
+def test_search_and_card_carry_the_avatar(client, sign_in):
+    register(client, "runner")
+    look = {"skin": "#3EAE6B", "head": "cap", "shirt": "bare"}
+    client.patch("/api/me", json={"avatar": look, "avatar_path": f"{client.user_id}/me.webp"})
+    runner_id = client.user_id
+
+    viewer = sign_in()
+    register(viewer, "viewer")
+    hit = viewer.get("/api/users?search=runner").json()["users"][0]
+    card = viewer.get(f"/api/users/{runner_id}/card").json()["card"]
+    for row in (hit, card):
+        assert row["avatar"] == look and row["avatar_path"] == f"{runner_id}/me.webp"
+
+
+# ----------------------------------------------------------------- profile grids
+
+def test_user_grids_carry_entries_inside_the_window(client, sign_in):
+    register(client, "runner")
+    gym = make_habit(client, "gym")
+    for offset in (0, 1, 40):
+        day = (TODAY - dt.timedelta(days=offset)).isoformat()
+        client.put(f"/api/habits/{gym}/entries/{day}", json={"value": 1})
+    make_habit(client, "reading", "count", goal=30, unit="min")
+    runner_id = client.user_id
+
+    viewer = sign_in()
+    register(viewer, "viewer")
+    since = (TODAY - dt.timedelta(days=7)).isoformat()
+    r = viewer.get(
+        f"/api/users/{runner_id}/habits?include=entries&from={since}&to={TODAY.isoformat()}"
+    )
+    assert r.status_code == 200
+    gym_grid, reading_grid = r.json()["habits"]
+    assert gym_grid["name"] == "gym" and "id" not in gym_grid
+    assert [e["entry_date"] for e in gym_grid["entries"]] == [
+        (TODAY - dt.timedelta(days=1)).isoformat(), TODAY.isoformat(),
+    ]
+    assert reading_grid["entries"] == []
+
+
+def test_user_grids_require_a_range(client):
+    register(client)
+    r = client.get(f"/api/users/{client.user_id}/habits?include=entries")
+    assert r.status_code == 422
+
+
+# ----------------------------------------------------------------- leaderboards
+
+WEEK_START = TODAY - dt.timedelta(days=(TODAY.weekday() + 1) % 7)  # sunday
+
+
+def boards_for(client):
+    r = client.get(
+        f"/api/leaderboards?today={TODAY.isoformat()}&week_start={WEEK_START.isoformat()}"
+    )
+    assert r.status_code == 200, r.text
+    return r.json()["boards"]
+
+
+def log(client, habit_id, days_ago, value=1):
+    day = (TODAY - dt.timedelta(days=days_ago)).isoformat()
+    assert client.put(f"/api/habits/{habit_id}/entries/{day}", json={"value": value}).status_code == 200
+
+
+def test_leaderboard_ranks_streaks_across_accounts(client, sign_in):
+    register(client, "luka")
+    mine = make_habit(client, "gym")
+    for d in range(2):
+        log(client, mine, d)
+
+    sam = sign_in()
+    register(sam, "sam", first="Sam")
+    theirs = make_habit(sam, "Gym ")  # same habit once the name is normalised
+    for d in range(1, 5):  # nothing today, but it reaches yesterday — still live
+        log(sam, theirs, d)
+
+    idle = sign_in()
+    register(idle, "idle", first="Ida")
+    make_habit(idle, "gym")
+    stale = sign_in()
+    register(stale, "stale", first="Stu")
+    old = make_habit(stale, "gym")
+    for d in range(3, 9):  # a long run that ended days ago is not a current streak
+        log(stale, old, d)
+    make_habit(stale, "chess")  # a habit luka doesn't track makes no board for luka
+
+    luka = sign_in(client.user_id)
+    (board,) = boards_for(luka)
+    assert (board["habit"], board["type"]) == ("gym", "completion")
+    ranked = [(e["user"]["username"], float(e["value"])) for e in board["entries"]]
+    assert ranked[:2] == [("sam", 4), ("luka", 2)]
+    assert sorted(ranked[2:]) == [("idle", 0), ("stale", 0)]
+
+
+def test_leaderboard_totals_the_week_for_counted_habits(client, sign_in):
+    register(client, "luka")
+    mine = make_habit(client, "reading", "count", goal=30, unit="min")
+    log(client, mine, 0, 25)
+    log(client, mine, 7, 500)  # last week — not part of this week's total
+
+    sam = sign_in()
+    register(sam, "sam", first="Sam")
+    theirs = make_habit(sam, "reading", "count", goal=30, unit="Min")
+    log(sam, theirs, 0, 40)
+
+    pages = sign_in()
+    register(pages, "pages", first="Pia")
+    other_unit = make_habit(pages, "reading", "count", goal=20, unit="pages")
+    log(pages, other_unit, 0, 999)  # different unit, different board
+
+    luka = sign_in(client.user_id)
+    (board,) = boards_for(luka)
+    assert (board["habit"], board["unit"]) == ("reading", "min")
+    assert [(e["user"]["username"], float(e["value"])) for e in board["entries"]] == [
+        ("sam", 40), ("luka", 25),
+    ]
+
+
+def test_leaderboard_is_empty_without_habits(client):
+    register(client)
+    assert boards_for(client) == []
+
+
+def test_leaderboard_rejects_a_week_start_outside_the_week(client):
+    register(client)
+    far = (TODAY - dt.timedelta(days=9)).isoformat()
+    r = client.get(f"/api/leaderboards?today={TODAY.isoformat()}&week_start={far}")
+    assert r.status_code == 422 and r.json()["error"]["code"] == "week_start_out_of_range"
+    assert client.get("/api/leaderboards").status_code == 422
+
+
+# ----------------------------------------------------------------- activity
+
+def test_activity_is_other_peoples_logs_newest_first(client, sign_in):
+    register(client, "luka")
+    log(client, make_habit(client, "gym"), 0)
+
+    sam = sign_in()
+    register(sam, "sam", first="Sam")
+    reading = make_habit(sam, "reading", "count", goal=30, unit="min")
+    log(sam, reading, 1, 45)
+    log(sam, reading, 0, 0)  # a recorded zero isn't news
+    log(sam, make_habit(sam, "gym"), 0)
+
+    luka = sign_in(client.user_id)
+    feed = luka.get("/api/activity").json()["activity"]
+    assert [(a["user"]["username"], a["habit"], float(a["value"])) for a in feed] == [
+        ("sam", "gym", 1), ("sam", "reading", 45),
+    ]
+    assert feed[1]["unit"] == "min" and feed[1]["type"] == "count"
+    assert len(luka.get("/api/activity?limit=1").json()["activity"]) == 1
+    assert luka.get("/api/activity?limit=0").status_code == 422
+
+
+# ----------------------------------------------------------------- reminders
+
+def new_reminder(**over):
+    import uuid as _uuid
+
+    return {"id": str(_uuid.uuid4()), "title": "haircut", "kind": "refile", **over}
+
+
+def test_reminder_keeps_the_id_the_client_made(client):
+    register(client)
+    body = new_reminder(
+        kind="anchor", start_date="2026-11-02", at_time="09:30", place="king st",
+        category_id="health",
+    )
+    r = client.post("/api/reminders", json=body)
+    assert r.status_code == 201, r.text
+    made = r.json()["reminder"]
+    assert made["id"] == body["id"] and made["at_time"] == "09:30:00" and made["done"] is False
+
+    listed = client.get("/api/reminders").json()
+    assert [x["id"] for x in listed["reminders"]] == [body["id"]]
+    assert listed["categories"] == []
+    # filing the same one twice is a conflict, not a duplicate row
+    assert client.post("/api/reminders", json=body).status_code == 409
+
+
+def test_reminder_shape_must_match_its_kind(client):
+    register(client)
+    bad = [
+        new_reminder(kind="refile", start_date="2026-11-02"),
+        new_reminder(kind="anchor"),
+        new_reminder(kind="floater", start_date="2026-11-02"),
+        new_reminder(kind="floater", start_date="2026-11-09", end_date="2026-11-02"),
+        new_reminder(kind="someday"),
+        new_reminder(title=""),
+    ]
+    for body in bad:
+        assert client.post("/api/reminders", json=body).status_code == 422, body
+    ok = new_reminder(kind="floater", start_date="2026-11-02", end_date="2026-11-09")
+    assert client.post("/api/reminders", json=ok).status_code == 201
+
+
+def test_reminder_done_and_delete(client):
+    register(client)
+    rid = client.post("/api/reminders", json=new_reminder()).json()["reminder"]["id"]
+    r = client.patch(f"/api/reminders/{rid}", json={"done": True})
+    assert r.status_code == 200 and r.json()["reminder"]["done"] is True
+    assert client.delete(f"/api/reminders/{rid}").status_code == 204
+    assert client.get("/api/reminders").json()["reminders"] == []
+    assert client.delete(f"/api/reminders/{rid}").status_code == 404
+
+
+def test_reminders_are_private(client, sign_in):
+    register(client, "luka")
+    rid = client.post("/api/reminders", json=new_reminder()).json()["reminder"]["id"]
+
+    other = sign_in()
+    register(other, "other")
+    assert other.get("/api/reminders").json()["reminders"] == []
+    assert other.patch(f"/api/reminders/{rid}", json={"done": True}).status_code == 404
+    assert other.delete(f"/api/reminders/{rid}").status_code == 404
+
+
+def test_reminder_categories(client, sign_in):
+    register(client, "luka")
+    import uuid as _uuid
+
+    cid = str(_uuid.uuid4())
+    r = client.post("/api/reminder-categories", json={"id": cid, "name": "garden", "icon": "🌱"})
+    assert r.status_code == 201 and r.json()["category"] == {
+        "id": cid, "name": "garden", "icon": "🌱", "created_at": r.json()["category"]["created_at"],
+    }
+    assert client.post("/api/reminder-categories", json={"name": ""}).status_code == 422
+    assert [c["id"] for c in client.get("/api/reminders").json()["categories"]] == [cid]
+
+    other = sign_in()
+    register(other, "other")
+    assert other.get("/api/reminders").json()["categories"] == []

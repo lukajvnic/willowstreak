@@ -1,3 +1,5 @@
+import re
+from datetime import date
 from typing import Any
 
 from fastapi import status
@@ -6,6 +8,8 @@ from supabase import Client
 
 from app.core.errors import ApiError
 from app.modules.users.schemas import (
+    PublicGridData,
+    PublicHabitData,
     PublicUserData,
     UserCardData,
     UserCreateRequest,
@@ -16,6 +20,7 @@ from app.modules.users.schemas import (
 
 POSTGRES_UNIQUE_VIOLATION = "23505"
 USERS_TABLE = "users"
+AVATAR_FILE_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,80}")
 
 
 def get_user(client: Client, user_id: str) -> UserData | None:
@@ -78,6 +83,18 @@ def update_user(client: Client, user_id: str, payload: UserUpdateRequest) -> Use
     patch = payload.model_dump(exclude_unset=True)
     if not patch:
         return require_user(client, user_id)
+
+    # avatar_path is rendered to everyone as a public Storage URL. Storage RLS
+    # only lets you upload into your own folder; this keeps the pointer there too.
+    path = patch.get("avatar_path")
+    if path is not None:
+        folder, _, filename = path.partition("/")
+        if folder != user_id or not AVATAR_FILE_PATTERN.fullmatch(filename):
+            raise ApiError(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                code="avatar_path_not_yours",
+                message="avatar_path must be a file in your own avatars folder",
+            )
 
     try:
         response = (
@@ -164,3 +181,41 @@ def get_user_card(client: Client, user_id: str) -> UserCardData:
             message="User not found",
         )
     return UserCardData.model_validate(rows[0])
+
+
+def get_user_habits(client: Client, user_id: str) -> list[PublicHabitData]:
+    """Someone else's unarchived habits, definition only — RLS hides the rows,
+    so this is a security-definer RPC like the card. An unknown user is just an
+    empty list."""
+    try:
+        response = client.rpc("get_user_habits", {"p_user_id": user_id}).execute()
+    except APIError as exc:
+        raise ApiError(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            code="user_habits_failed",
+            message="Habits could not be loaded",
+        ) from exc
+    return [PublicHabitData.model_validate(row) for row in (response.data or [])]
+
+
+def get_user_grids(
+    client: Client, user_id: str, date_from: date, date_to: date
+) -> list[PublicGridData]:
+    """The same habits with a window of their entries — what someone's profile
+    draws its grids from."""
+    try:
+        response = client.rpc(
+            "get_user_grids",
+            {
+                "p_user_id": user_id,
+                "p_from": date_from.isoformat(),
+                "p_to": date_to.isoformat(),
+            },
+        ).execute()
+    except APIError as exc:
+        raise ApiError(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            code="user_habits_failed",
+            message="Habits could not be loaded",
+        ) from exc
+    return [PublicGridData.model_validate(row) for row in (response.data or [])]

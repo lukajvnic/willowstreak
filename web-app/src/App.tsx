@@ -6,7 +6,6 @@ import NewHabit from "./components/NewHabit";
 import Leaderboard from "./components/Leaderboard";
 import Social from "./components/Social";
 import ProfileModal from "./components/ProfileModal";
-import { ME } from "./lib/people";
 import Todo from "./components/Todo";
 import { AvatarPreview } from "./lib/avatarKit";
 import { useAvatarState } from "./lib/AvatarContext";
@@ -19,6 +18,7 @@ import {
   saveRamp,
   type HabitWithEntries,
 } from "./lib/habitsApi";
+import { stubOf } from "./lib/usersApi";
 
 const NAV = ["habits", "to-do", "leaderboard", "social"];
 
@@ -32,7 +32,8 @@ export default function App() {
   const { photo, skin, worn } = useAvatarState();
 
   const token = session?.access_token;
-  const signedIn = Boolean(token) && profile !== null && profile !== "none";
+  const me = profile !== null && profile !== "none" ? profile : null;
+  const signedIn = Boolean(token) && me !== null;
 
   useEffect(() => {
     if (!signedIn || !token) {
@@ -49,7 +50,7 @@ export default function App() {
   }, [signedIn, token]);
 
   if (!ready || (session && profile === null)) return null;
-  if (!signedIn) return <AuthGate />;
+  if (!signedIn || !me) return <AuthGate />;
 
   const log = (habitId: string | undefined, date: Date, value: number) => {
     if (!habitId || !token) return;
@@ -98,11 +99,10 @@ export default function App() {
           ) : (
             <>
               <div className="stack">
-                {habits.map(({ habit, entries }, i) => (
+                {habits.map(({ habit, entries }) => (
                   <Heatmap
                     key={habit.id ?? habit.name}
                     habit={habit}
-                    seed={i + 1}
                     entries={entries}
                     onLog={(date, value) => log(habit.id, date, value)}
                   />
@@ -144,7 +144,11 @@ export default function App() {
       )}
 
       {showMe && (
-        <ProfileModal person={ME} onClose={() => setShowMe(false)} onSignOut={() => void signOut()} />
+        <ProfileModal
+          person={stubOf(me)}
+          onClose={() => setShowMe(false)}
+          onSignOut={() => void signOut()}
+        />
       )}
     </main>
   );

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import DayPopover from "./DayPopover";
 import HabitToday from "./HabitToday";
 import {
-  buildSeries,
   formatAmount,
   formatDay,
   gridDates,
@@ -18,32 +17,32 @@ const DAY_LABELS = ["", "mon", "", "wed", "", "fri", ""];
 
 type Props = {
   habit: Habit;
-  seed: number;
+  /** day index -> amount from the server, indexed against a grid `weeks` wide */
+  entries: Record<number, number>;
   weeks?: number;
   cell?: number;
   /** someone else's habit — stats still read, but their days aren't yours to log */
   readOnly?: boolean;
-  /** day index -> amount from the server. when present the seeded mock series is off */
-  entries?: Record<number, number>;
   /** fires with the cell's date whenever a day is logged or changed */
   onLog?: (date: Date, value: number) => void;
 };
 
 type Open = { index: number; centerX: number; panelWidth: number; top: number };
 
-export default function Heatmap({ habit, seed, weeks = WEEKS, cell = 14, readOnly = false, entries, onLog }: Props) {
-  // day index -> amount, for days you've touched. everything else shows the seeded value
+export default function Heatmap({ habit, entries, weeks = WEEKS, cell = 14, readOnly = false, onLog }: Props) {
+  // day index -> amount, for days you've touched. everything else shows the saved value
   const [edits, setEdits] = useState<Record<number, number>>({});
   const [open, setOpen] = useState<Open | null>(null);
   const panelRef = useRef<HTMLElement>(null);
 
-  const series = useMemo(() => {
-    if (!entries) return buildSeries(seed, habit, weeks);
-    return Array.from({ length: weeks * 7 }, (_, i) => {
-      const amount = entries[i] ?? 0;
-      return { level: levelFor(amount, habit.goal), amount };
-    });
-  }, [entries, seed, habit, weeks]);
+  const series = useMemo(
+    () =>
+      Array.from({ length: weeks * 7 }, (_, i) => {
+        const amount = entries[i] ?? 0;
+        return { level: levelFor(amount, habit.goal), amount };
+      }),
+    [entries, habit, weeks],
+  );
   const dates = useMemo(() => gridDates(weeks), [weeks]);
   const months = useMemo(() => monthLabels(dates, weeks), [dates, weeks]);
   const today = useMemo(() => todayIndex(weeks), [weeks]);

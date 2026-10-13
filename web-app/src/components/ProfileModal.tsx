@@ -1,15 +1,26 @@
 import { useEffect, useState } from "react";
-import Avatar from "./Avatar";
 import AvatarCreator from "./AvatarCreator";
 import Heatmap from "./Heatmap";
-import { HABITS } from "../lib/habits";
-import { ME, toneFor, type Person } from "../lib/people";
+import UserAvatar from "./UserAvatar";
+import { useAuth } from "../lib/auth";
 import { AvatarPreview } from "../lib/avatarKit";
 import { useAvatarState } from "../lib/AvatarContext";
+import { loadUserGrids, type HabitWithEntries } from "../lib/habitsApi";
+import { getUserCard, type Person, type PersonStub } from "../lib/usersApi";
 
-type Props = { person: Person; onClose: () => void; onSignOut?: () => void };
+/** a year won't fit the modal at a readable cell size */
+const GRID_WEEKS = 24;
 
+type Props = { person: PersonStub; onClose: () => void; onSignOut?: () => void };
+
+/** anyone's profile, your own included. it opens on what the caller already
+ * knows — name, handle, avatar — and fills in the card and the grids as they load */
 export default function ProfileModal({ person, onClose, onSignOut }: Props) {
+  const { session, profile } = useAuth();
+  const token = session?.access_token;
+  const [card, setCard] = useState<Person | null>(null);
+  const [grids, setGrids] = useState<HabitWithEntries[] | null>(null);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -18,14 +29,33 @@ export default function ProfileModal({ person, onClose, onSignOut }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const isMe = person.handle === ME.handle;
-  // only the signed-in user has a customizable avatar — everyone else keeps the plain pfp
+  useEffect(() => {
+    if (!token) return;
+    let stale = false;
+    getUserCard(token, person.id)
+      .then((c) => !stale && setCard(c))
+      .catch((err) => console.error("card load failed", err));
+    loadUserGrids(token, person.id, GRID_WEEKS)
+      .then((g) => !stale && setGrids(g))
+      .catch((err) => console.error("grids load failed", err));
+    return () => {
+      stale = true;
+    };
+  }, [token, person.id]);
+
+  const isMe = profile !== null && profile !== "none" && profile.id === person.id;
+  // your own avatar comes from the live editing state, so a change shows before it's saved
   const { photo, skin, worn } = useAvatarState();
   // collapsed until the avatar itself is clicked, so opening your profile doesn't
   // dump you straight into the editor
   const [editing, setEditing] = useState(false);
 
-  const seed = person.handle.length + person.streak;
+  const stats: [string | number, string][] = [
+    [card?.streak ?? "—", "day streak"],
+    [card?.best ?? "—", "best streak"],
+    [card?.tracked ?? "—", "habits"],
+    [card?.joined ?? "—", "joined"],
+  ];
 
   return (
     <div className="scrim" onClick={onClose}>
@@ -47,44 +77,30 @@ export default function ProfileModal({ person, onClose, onSignOut }: Props) {
               <AvatarPreview tone={skin} photo={photo} head={worn.head} shirt={worn.shirt} size={64} crop />
             </button>
           ) : (
-            <Avatar name={person.name} tone={toneFor(person.name)} size={64} />
+            <UserAvatar user={person} size={64} />
           )}
           <div>
             <h3 className="profile-name">{person.name}</h3>
             <p className="profile-handle">{person.handle}</p>
-            <p className="profile-bio">{person.bio}</p>
+            {card?.bio && <p className="profile-bio">{card.bio}</p>}
           </div>
         </div>
 
         <div className="stats">
-          <div className="stat">
-            <span className="stat-value">{person.streak}</span>
-            <span className="stat-label">day streak</span>
-          </div>
-          <div className="stat">
-            <span className="stat-value">{person.best}</span>
-            <span className="stat-label">best streak</span>
-          </div>
-          <div className="stat">
-            <span className="stat-value">{person.tracked}</span>
-            <span className="stat-label">habits</span>
-          </div>
-          <div className="stat">
-            <span className="stat-value">{person.joined}</span>
-            <span className="stat-label">joined</span>
-          </div>
+          {stats.map(([value, label]) => (
+            <div className="stat" key={label}>
+              <span className="stat-value">{value}</span>
+              <span className="stat-label">{label}</span>
+            </div>
+          ))}
         </div>
 
         {isMe && editing && <AvatarCreator />}
 
         <div className="profile-grids">
-          {person.habits.map((name, i) => {
-            const habit = HABITS.find((h) => h.name === name);
-            if (!habit) return null;
-            return (
-              <Heatmap key={name} habit={habit} seed={seed + i * 7} weeks={24} cell={14} readOnly />
-            );
-          })}
+          {grids?.map(({ habit, entries }, i) => (
+            <Heatmap key={i} habit={habit} entries={entries} weeks={GRID_WEEKS} cell={14} readOnly />
+          ))}
         </div>
 
         {isMe && onSignOut && (

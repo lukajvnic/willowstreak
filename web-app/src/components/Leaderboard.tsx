@@ -1,8 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
-import Avatar from "./Avatar";
-import { Figure } from "../lib/avatarKit";
-import { BOARDS, type Board } from "../lib/leaderboards";
-import { ME } from "../lib/people";
+import UserAvatar from "./UserAvatar";
+import { useAuth } from "../lib/auth";
+import { loadBoards, type Board } from "../lib/leaderboards";
 
 const PODIUM_ORDER = [1, 0, 2]; // silver, gold, bronze
 const SLIDE_MS = 460;
@@ -214,16 +213,17 @@ function Podium({ board }: { board: Board }) {
 
   return (
     <div className="podium">
-      {PODIUM_ORDER.map((entryIdx, slot) => {
+      {/* a board can have fewer than three people on it — only the taken steps are built */}
+      {PODIUM_ORDER.filter((entryIdx) => top3[entryIdx]).map((entryIdx, slot) => {
         const rank = entryIdx + 1;
         const e = top3[entryIdx];
         return (
-          <div className="plinth" data-rank={rank} key={e.name}>
+          <div className="plinth" data-rank={rank} key={e.person.id}>
             <div className="plinth-top">
               <span className="plinth-figure">
-                <Figure tone={e.tone} size={rank === 1 ? 78 : 62} />
+                <UserAvatar user={e.person} size={rank === 1 ? 78 : 62} full />
               </span>
-              <span className="plinth-name">{e.name}</span>
+              <span className="plinth-name">{e.person.name}</span>
               <span className="plinth-value">
                 {e.value.toLocaleString()} {board.unit}
               </span>
@@ -239,6 +239,8 @@ function Podium({ board }: { board: Board }) {
 
 /* every entry on the board, scrolling inside the stage frame */
 function RankList({ board, view }: { board: Board; view: "podium" | "list" }) {
+  const { profile } = useAuth();
+  const myId = profile !== null && profile !== "none" ? profile.id : null;
   const scrollRef = useRef<HTMLDivElement>(null);
   const meRef = useRef<HTMLLIElement>(null);
   const leader = board.entries[0]?.value ?? 0;
@@ -256,13 +258,15 @@ function RankList({ board, view }: { board: Board; view: "podium" | "list" }) {
     <div className="ranks-frame">
       <div className="ranks-head">
         <span className="ranks-head-label">all ranks</span>
-        <span className="ranks-head-count">{board.entries.length} people</span>
+        <span className="ranks-head-count">
+          {board.entries.length} {board.entries.length === 1 ? "person" : "people"}
+        </span>
       </div>
 
       <div className="ranks-scroll" ref={scrollRef}>
         <ol className="ranks">
           {board.entries.map((e, i) => {
-            const mine = e.name === ME.name;
+            const mine = e.person.id === myId;
             // bar length is the entry's share of the leader's value
             const pct = leader ? Math.max(4, (e.value / leader) * 100) : 4;
 
@@ -272,13 +276,13 @@ function RankList({ board, view }: { board: Board; view: "podium" | "list" }) {
                 data-rank={i + 1}
                 data-me={mine ? "" : undefined}
                 ref={mine ? meRef : undefined}
-                key={e.name}
+                key={e.person.id}
               >
                 <span className="rank-bar" style={{ width: `${pct}%` }} />
                 <span className="rank-num">{i + 1}</span>
-                <Avatar name={e.name} tone={e.tone} size={26} />
+                <UserAvatar user={e.person} size={26} />
                 <span className="rank-name">
-                  {e.name}
+                  {e.person.name}
                   {mine && <span className="rank-you">you</span>}
                 </span>
                 <span className="rank-value">{e.value.toLocaleString()}</span>
@@ -306,17 +310,44 @@ function BoardStage({ board, view }: { board: Board; view: "podium" | "list" }) 
 }
 
 export default function Leaderboard() {
+  const token = useAuth().session?.access_token;
+  const [boards, setBoards] = useState<Board[] | null>(null);
+  const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    if (!token) return;
+    let stale = false;
+    loadBoards(token)
+      .then((list) => !stale && setBoards(list))
+      .catch((err) => !stale && setLoadError(String(err.message ?? err)));
+    return () => {
+      stale = true;
+    };
+  }, [token]);
+
+  if (boards === null) {
+    return <p className="foot">{loadError ? `couldn't load leaderboards — ${loadError}` : "loading…"}</p>;
+  }
+  // a board exists for each habit you track, so no habits means nothing to rank
+  if (boards.length === 0) return <p className="foot">no leaderboards yet — add a habit to get on one</p>;
+
+  return <Boards boards={boards} />;
+}
+
+function Boards({ boards }: { boards: Board[] }) {
   const [index, setIndex] = useState(0);
   const [view, setView] = useState<"podium" | "list">("podium");
   // the board being slid away, plus which way it is going
   const [leaving, setLeaving] = useState<{ index: number; view: typeof view; dir: number } | null>(null);
 
-  const board = BOARDS[index];
+  const board = boards[index];
+  // with a single board there's nowhere to step to
+  const alone = boards.length < 2;
 
   const step = (delta: number) => {
     if (leaving) return;
     setLeaving({ index, view, dir: delta });
-    setIndex((i) => (i + delta + BOARDS.length) % BOARDS.length);
+    setIndex((i) => (i + delta + boards.length) % boards.length);
     setView("podium");
   };
 
@@ -336,14 +367,20 @@ export default function Leaderboard() {
       </header>
 
       <div className="board-row">
-        <button className="arrow" type="button" onClick={() => step(-1)} aria-label="previous leaderboard">
+        <button
+          className="arrow"
+          type="button"
+          disabled={alone}
+          onClick={() => step(-1)}
+          aria-label="previous leaderboard"
+        >
           <Chevron dir="left" />
         </button>
 
         <div className="stage">
           {leaving && (
             <div className="slide" data-role="out" data-dir={leaving.dir} key={`out-${leaving.index}`}>
-              <BoardStage board={BOARDS[leaving.index]} view={leaving.view} />
+              <BoardStage board={boards[leaving.index]} view={leaving.view} />
             </div>
           )}
 
@@ -352,7 +389,13 @@ export default function Leaderboard() {
           </div>
         </div>
 
-        <button className="arrow" type="button" onClick={() => step(1)} aria-label="next leaderboard">
+        <button
+          className="arrow"
+          type="button"
+          disabled={alone}
+          onClick={() => step(1)}
+          aria-label="next leaderboard"
+        >
           <Chevron dir="right" />
         </button>
       </div>

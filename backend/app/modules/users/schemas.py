@@ -1,10 +1,13 @@
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 USERNAME_PATTERN = r"^[a-z0-9_]{2,20}$"
+# an item id from the frontend's avatar kit: "bare", "top_hat", "rick_tee"
+AVATAR_ITEM_PATTERN = r"^[a-z0-9_]{1,40}$"
 
 
 class HabitType(StrEnum):
@@ -30,10 +33,21 @@ class UserCreateRequest(BaseModel):
     bio: str = ""
 
 
+class AvatarLook(BaseModel):
+    """What users.avatar holds: the drawn figure. The uploaded head photo is
+    separate — a Storage object that avatar_path points at."""
+
+    skin: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    head: str = Field(default="bare", pattern=AVATAR_ITEM_PATTERN)
+    shirt: str = Field(default="bare", pattern=AVATAR_ITEM_PATTERN)
+
+
 class UserUpdateRequest(BaseModel):
     first_name: str | None = Field(default=None, min_length=1, max_length=40)
     last_name: str | None = Field(default=None, max_length=40)
     bio: str | None = None
+    avatar: AvatarLook | None = None
+    # null clears the photo; a path must sit in the caller's own folder
     avatar_path: str | None = Field(default=None, max_length=255)
 
 
@@ -69,6 +83,36 @@ class UserCardData(PublicUserData):
 
 class UserCardResponse(BaseModel):
     card: UserCardData
+
+
+class PublicHabitData(BaseModel):
+    """What get_user_habits() returns — enough of someone's habit to start the
+    same one yourself. No id, no entries."""
+
+    name: str
+    type: HabitType
+    goal: int | None = None
+    unit: str = ""
+
+
+class UserHabitsResponse(BaseModel):
+    habits: list[PublicHabitData]
+
+
+class PublicEntryData(BaseModel):
+    entry_date: date
+    value: Decimal
+
+
+class PublicGridData(PublicHabitData):
+    """get_user_grids(): a habit plus a window of its days, for someone's
+    profile."""
+
+    entries: list[PublicEntryData] = []
+
+
+class UserGridsResponse(BaseModel):
+    habits: list[PublicGridData]
 
 
 class UsernameAvailableResponse(BaseModel):

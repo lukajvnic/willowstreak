@@ -34,6 +34,8 @@ const BROOM = "\u{1F9F9}"; // 🧹
 const HOSPITAL = "\u{1F3E5}"; // πŸ₯
 export const LABEL_TAG = "\u{1F3F7}\u{FE0F}"; // 🏷️ — default icon for a fresh category
 
+/** the categories everyone starts with. they live here, not in the database —
+ * a reminder points at one by its slug, and at one you made by its uuid */
 export const DEFAULT_CATEGORIES: Category[] = [
   { id: "school", name: "school", icon: GRADUATION_CAP },
   { id: "work", name: "work", icon: BRIEFCASE },
@@ -41,9 +43,6 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: "chores", name: "chores", icon: BROOM },
   { id: "health", name: "health", icon: HOSPITAL },
 ];
-
-let catSeq = 0;
-export const categoryUid = () => `cat${++catSeq}`;
 
 export type KindInfo = {
   id: Kind;
@@ -231,25 +230,4 @@ export function kindOrder(list: Reminder[], mode: SortMode): Kind[] {
     const cmp = soonest(a).localeCompare(soonest(b));
     return cmp !== 0 ? cmp : RANK[a] - RANK[b];
   });
-}
-
-/* ---------- seed ---------- */
-
-let seq = 0;
-export const uid = () => `r${++seq}`;
-
-export function seedReminders(): Reminder[] {
-  const t = todayKey();
-  return [
-    { id: uid(), title: "dentist — cleaning", kind: "anchor", done: false, start: shiftKey(t, 2), time: "09:30", place: "dr. amari, king st", categoryId: "health" },
-    { id: uid(), title: "standup with the design team", kind: "anchor", done: false, start: shiftKey(t, 5), time: "14:00", place: "zoom", categoryId: "work" },
-    { id: uid(), title: "flight to lisbon", kind: "anchor", done: false, start: shiftKey(t, 19), time: "07:15", place: "yyz — terminal 1" },
-    { id: uid(), title: "haircut", kind: "floater", done: false, start: shiftKey(t, 1), end: shiftKey(t, 8) },
-    { id: uid(), title: "renew passport", kind: "floater", done: false, start: shiftKey(t, 6), end: shiftKey(t, 24) },
-    { id: uid(), title: "swap the winter tires", kind: "floater", done: true, start: shiftKey(t, -3), end: shiftKey(t, 4), categoryId: "chores" },
-    { id: uid(), title: "that thing sam mentioned about the lease", kind: "refile", done: false, categoryId: "chores" },
-    { id: uid(), title: "look into the noise upstairs", kind: "refile", done: false },
-    { id: uid(), title: "learn to sail", kind: "backlog", done: false, categoryId: "exercise" },
-    { id: uid(), title: "repaint the hallway", kind: "backlog", done: false, categoryId: "chores" },
-  ];
 }

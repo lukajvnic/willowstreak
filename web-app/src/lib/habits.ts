@@ -1,12 +1,10 @@
 export type Habit = {
-  /** server id — absent on mock habits (friends' grids, tests) */
+  /** server id — absent on someone else's habit, which comes without one */
   id?: string;
   name: string;
   meta: string;
   /** css color ramp, lightest -> darkest */
   ramp: [string, string, string, string, string];
-  /** deterministic-ish 0..1 "commitment" — higher means more filled days */
-  density: number;
   /** what a full day looks like — 1 for yes/no habits */
   goal: number;
   unit: string;
@@ -26,84 +24,32 @@ export const RAMPS: Record<RampName, Habit["ramp"]> = {
   violet: ["#3E3C3A", "#3F3349", "#584770", "#75609B", "#9C88C6"],
 };
 
-export const HABITS: Habit[] = [
-  {
-    name: "gym",
-    meta: "yes / no",
-    ramp: RAMPS.gold,
-    density: 0.58,
-    goal: 1,
-    unit: "",
-    toggle: true,
-  },
-  {
-    name: "push-ups",
-    meta: "count per day",
-    ramp: RAMPS.clay,
-    density: 0.62,
-    goal: 100,
-    unit: "reps",
-    toggle: false,
-  },
-  {
-    name: "reading",
-    meta: "minutes per day",
-    ramp: RAMPS.blue,
-    density: 0.55,
-    goal: 30,
-    unit: "min",
-    toggle: false,
-  },
+/** the part of a habit you can start from — a preset, or one copied off someone */
+export type HabitTemplate = Pick<Habit, "name" | "goal" | "unit" | "toggle">;
+
+export const PRESETS: HabitTemplate[] = [
+  { name: "gym", toggle: true, goal: 1, unit: "" },
+  { name: "running", toggle: false, goal: 5, unit: "km" },
+  { name: "walking", toggle: false, goal: 10000, unit: "steps" },
+  { name: "push-ups", toggle: false, goal: 50, unit: "reps" },
+  { name: "stretching", toggle: true, goal: 1, unit: "" },
+  { name: "reading", toggle: false, goal: 30, unit: "min" },
+  { name: "meditation", toggle: false, goal: 10, unit: "min" },
+  { name: "journaling", toggle: true, goal: 1, unit: "" },
+  { name: "water", toggle: false, goal: 8, unit: "glasses" },
+  { name: "sleep", toggle: false, goal: 8, unit: "hours" },
+  { name: "studying", toggle: false, goal: 2, unit: "hours" },
+  { name: "no sugar", toggle: true, goal: 1, unit: "" },
 ];
 
-/** cheap seeded noise so the grids look plausible and stay stable across renders */
-function noise(seed: number): number {
-  const x = Math.sin(seed * 12.9898) * 43758.5453;
-  return x - Math.floor(x);
+/** "yes / no" or "30 min per day" — a template's shape in one line */
+export function templateMeta(t: HabitTemplate): string {
+  if (t.toggle) return "yes / no";
+  return [t.goal.toLocaleString(), t.unit, "per day"].filter(Boolean).join(" ");
 }
 
 /** one day of a habit — the grid level and the amount behind it */
 export type Day = { level: number; amount: number };
-
-/**
- * levels 1..4, each with the noise value that opens it and the slice of the goal
- * it stands for. the ratios line up with `levelFor`, so an amount always maps
- * back to the level its cell is painted with.
- */
-const LEVELS = [
-  { at: 0.30, ratio: [0.10, 0.33] },
-  { at: 0.42, ratio: [0.34, 0.66] },
-  { at: 0.55, ratio: [0.67, 0.99] },
-  { at: 0.68, ratio: [1.00, 1.35] },
-];
-
-export function buildSeries(seed: number, habit: Habit, weeks: number = WEEKS): Day[] {
-  const days = weeks * 7;
-  return Array.from({ length: days }, (_, i) => {
-    const n = noise(seed * 100 + i);
-    // gentle upward trend — recent weeks a bit stronger
-    const trend = 0.75 + (i / days) * 0.5;
-    const v = n * habit.density * trend;
-
-    let level = 0;
-    for (let l = LEVELS.length; l > 0; l--) {
-      if (v >= LEVELS[l - 1].at) {
-        level = l;
-        break;
-      }
-    }
-
-    if (level === 0) return { level: 0, amount: 0 };
-    if (habit.toggle) return { level, amount: 1 };
-
-    // spread v across the level's band so the amount reads as a real number
-    const band = LEVELS[level - 1];
-    const ceiling = LEVELS[level]?.at ?? 1;
-    const t = Math.min(1, (v - band.at) / (ceiling - band.at));
-    const [lo, hi] = band.ratio;
-    return { level, amount: Math.max(1, Math.round((lo + t * (hi - lo)) * habit.goal)) };
-  });
-}
 
 export type Stats = {
   /** consecutive logged days ending today */

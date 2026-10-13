@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  categoryUid,
   KINDS,
   kindInfo,
   LABEL_TAG,
   shiftKey,
   todayKey,
-  uid,
   type Category,
   type Kind,
   type Reminder,
@@ -49,7 +47,8 @@ export default function AddReminder({ categories, onAdd, onCreateCategory, onClo
   const named = title.trim().length > 0;
 
   function save(k: Kind) {
-    const base = { id: uid(), title: title.trim(), kind: k, done: false, categoryId: category ?? undefined };
+    // the id is made here and kept by the server, so the row is real from the first paint
+    const base = { id: crypto.randomUUID(), title: title.trim(), kind: k, done: false, categoryId: category ?? undefined };
     if (k === "floater") {
       const [a, b] = start <= end ? [start, end] : [end, start];
       onAdd({ ...base, start: a, end: b });
@@ -71,7 +70,7 @@ export default function AddReminder({ categories, onAdd, onCreateCategory, onClo
   function commitCategory() {
     const name = newName.trim();
     if (!name) return newNameRef.current?.focus();
-    const c: Category = { id: categoryUid(), name, icon: newIcon.trim() || LABEL_TAG };
+    const c: Category = { id: crypto.randomUUID(), name, icon: newIcon.trim() || LABEL_TAG };
     onCreateCategory(c);
     setCategory(c.id);
     setNewIcon("");

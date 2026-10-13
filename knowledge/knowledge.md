@@ -75,6 +75,26 @@ a cell near the right edge.
 keeps the stats but drops the today card. it stays at 24 weeks on purpose — a year would need
 ~7px cells to fit the modal, which is unreadable. keep those props working.
 
+## new habit dialog
+
+`NewHabit.tsx` is one modal with three tabs (`.auth-tabs`, reused from the auth
+card): `custom` (the form), `presets` (`PRESETS` in `src/lib/habits.ts`) and
+`copy someone's` (account search, then that account's habits). only one shows at
+a time. presets and copied habits never create anything directly — picking one
+calls `fill()`, which loads it into the form and switches to `custom`, so there
+is a single create path with the colour picker and the "you already track that"
+check. rows for a habit you already track are disabled and read `tracking`.
+
+`.new-body` is a fixed 268px frame so switching tabs never resizes the modal:
+the form pins its button to the bottom, the lists scroll inside. the modal is a
+`div` and only the `custom` pane is a `<form>` — otherwise enter in the search
+box would submit the half-filled form behind it.
+
+the copy tab's search and the social tab's search are the same pieces:
+`useAccountSearch` (`src/lib/usersApi.ts`), `SearchField`, `AccountList`. once an
+account is picked the search pill is reused as a chip showing who it is, with ×
+to go back. your own account is filtered out of the copy results.
+
 ## leaderboard
 
 `src/components/Leaderboard.tsx` is one component with two stacked layers inside a fixed 392px
@@ -113,6 +133,13 @@ definer rpc `search_users`) and `GET /api/users/{id}/card` (public profile +
 streak/best/tracked via `get_user_card`, deliberately no habit names/entries).
 Social tab's search box is wired to these; clicking a hit opens ProfileModal
 with the real card. Migration `20260909100000_account_search.sql`.
+
+Copying a habit: `GET /api/users/{id}/habits` (security definer rpc
+`get_user_habits`, migration `20261013120000_user_habits.sql`) returns another
+account's unarchived habits as `{name, type, goal, unit}` only. Added 2026-10-13
+at Luka's request for the new-habit dialog — it is the first and only place
+habit names leave their owner, so any signed-in user can now read what any
+account tracks. The card (`get_user_card`) still carries no habit names.
 
 **v1 scope is users + habits + habit entries.** Friendships and leaderboards are
 not in it. Note the frontend leaderboard page still runs on the mock

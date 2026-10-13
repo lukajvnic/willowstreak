@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import AddReminder from "./AddReminder";
 import Calendar from "./Calendar";
+import { useAuth } from "../lib/auth";
 import {
   covers,
   DEFAULT_CATEGORIES,
@@ -8,7 +9,6 @@ import {
   fmtTime,
   kindInfo,
   kindOrder,
-  seedReminders,
   shiftKey,
   sortReminders,
   todayKey,
@@ -17,6 +17,13 @@ import {
   type Reminder,
   type SortMode,
 } from "../lib/todos";
+import {
+  createCategory,
+  createReminder,
+  deleteReminder,
+  loadTodos,
+  setReminderDone,
+} from "../lib/todosApi";
 
 const SECTION: Record<Kind, string> = {
   anchor: "anchored",
@@ -103,8 +110,36 @@ function Row({ r, category, showKind, onToggle, onDrop }: RowProps) {
 }
 
 export default function Todo() {
-  const [reminders, setReminders] = useState<Reminder[]>(seedReminders);
+  const token = useAuth().session?.access_token;
+  // null until the first load lands
+  const [loaded, setLoaded] = useState<Reminder[] | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
+  const reminders = loaded ?? [];
+  const setReminders = (change: (prev: Reminder[]) => Reminder[]) =>
+    setLoaded((prev) => change(prev ?? []));
+
+  const reload = useCallback(() => {
+    if (!token) return;
+    loadTodos(token)
+      .then((todos) => {
+        setLoaded(todos.reminders);
+        setCategories([...DEFAULT_CATEGORIES, ...todos.categories]);
+      })
+      .catch((err) => setLoadError(String(err.message ?? err)));
+  }, [token]);
+
+  useEffect(reload, [reload]);
+
+  // every change shows straight away and saves behind it. if a save fails, the
+  // list is re-read so the tab goes back to what's actually stored
+  const save = (write: (token: string) => Promise<void>) => {
+    if (!token) return;
+    write(token).catch((err) => {
+      console.error("reminder save failed", err);
+      reload();
+    });
+  };
   const [selected, setSelected] = useState<string | null>(null);
   const [catFilter, setCatFilter] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -118,10 +153,16 @@ export default function Todo() {
 
   const catOf = (r: Reminder) => categories.find((c) => c.id === r.categoryId);
 
-  const toggle = (id: string) =>
-    setReminders((prev) => prev.map((r) => (r.id === id ? { ...r, done: !r.done } : r)));
+  const toggle = (id: string) => {
+    const done = !reminders.find((r) => r.id === id)?.done;
+    setReminders((prev) => prev.map((r) => (r.id === id ? { ...r, done } : r)));
+    save((t) => setReminderDone(t, id, done));
+  };
 
-  const drop = (id: string) => setReminders((prev) => prev.filter((r) => r.id !== id));
+  const drop = (id: string) => {
+    setReminders((prev) => prev.filter((r) => r.id !== id));
+    save((t) => deleteReminder(t, id));
+  };
 
   return (
     <div className="todo">
@@ -213,10 +254,16 @@ export default function Todo() {
         </div>
 
         <div className="reminder-scroll">
-          {shown.length === 0 && (
+          {loaded === null ? (
             <p className="reminders-empty">
-              {selected || catFilter ? "nothing here" : "nothing yet — hit + to add one"}
+              {loadError ? `couldn't load reminders — ${loadError}` : "loading…"}
             </p>
+          ) : (
+            shown.length === 0 && (
+              <p className="reminders-empty">
+                {selected || catFilter ? "nothing here" : "nothing yet — hit + to add one"}
+              </p>
+            )
           )}
 
           {split ? (
@@ -256,8 +303,14 @@ export default function Todo() {
       {adding && (
         <AddReminder
           categories={categories}
-          onAdd={(r) => setReminders((prev) => [...prev, r])}
-          onCreateCategory={(c) => setCategories((prev) => [...prev, c])}
+          onAdd={(r) => {
+            setReminders((prev) => [...prev, r]);
+            save((t) => createReminder(t, r));
+          }}
+          onCreateCategory={(c) => {
+            setCategories((prev) => [...prev, c]);
+            save((t) => createCategory(t, c));
+          }}
           onClose={() => setAdding(false)}
         />
       )}

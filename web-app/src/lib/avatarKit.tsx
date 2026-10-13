@@ -212,23 +212,6 @@ const SHIRT_ITEMS: Item[] = [
   ),
 ];
 
-const BARE_SHIRT: Item = SHIRT_ITEMS[0];
-
-/** a small stand-alone render of the bare figure (body + head, no accessory) —
- * for spots that only know a person's tone, like leaderboard podiums */
-export function Figure({ tone, size }: { tone: string; size: number }) {
-  const h = size;
-  const w = Math.round((VIEW.w / VIEW.h) * h);
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${VIEW.w} ${VIEW.h}`} aria-hidden>
-      <g transform={`translate(0,${FIGURE_SHIFT})`}>
-        {drawBody(tone, BARE_SHIRT)}
-        {drawHead(null, tone)}
-      </g>
-    </svg>
-  );
-}
-
 /** a square crop tight on the head — full canvas width for headroom (so tall hats
  * still fit) but cut short below the chin, for spots too small to read a full body */
 const FACE_CROP: Box = { x: 40, y: 0, w: 220, h: 220 };
@@ -272,3 +255,27 @@ export const KITS: Kit[] = [
   { key: "head", label: "head", span: 204, band: [10, 204], items: HEAD_ITEMS },
   { key: "shirt", label: "shirt", span: 110, band: [192, 298], items: SHIRT_ITEMS },
 ];
+
+/* ---------- a saved look ---------- */
+
+/** what `users.avatar` holds — items by id, so reordering a kit never changes
+ * what anyone is wearing */
+export type AvatarLook = { skin: string; head: string; shirt: string };
+
+/** anyone with an avatar: yourself, a search hit, a leaderboard row */
+export type AvatarOwner = { avatar: AvatarLook | null; avatar_path: string | null };
+
+function itemOf(category: Category, id: string | undefined): Item {
+  const items = KITS.find((k) => k.key === category)!.items;
+  return items.find((i) => i.id === id) ?? items[0];
+}
+
+/** a stored look as drawable parts. no look yet, or an item that has since
+ * left the kit, falls back to the bare default */
+export function resolveLook(look: AvatarLook | null | undefined) {
+  return {
+    tone: look?.skin ?? BASE_COLORS[0],
+    head: itemOf("head", look?.head),
+    shirt: itemOf("shirt", look?.shirt),
+  };
+}

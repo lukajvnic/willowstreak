@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import Avatar from "./Avatar";
+import { useEffect, useState } from "react";
+import AccountList from "./AccountList";
 import ProfileModal from "./ProfileModal";
-import { ACTIVITIES, PEOPLE, toneFor, type Person } from "../lib/people";
-import { useAuth } from "../lib/auth";
-import { displayName, getUserCard, searchUsers, type AccountHit } from "../lib/usersApi";
-
-type Event = { id: number; name: string; text: string; at: number };
+import SearchField from "./SearchField";
+import UserAvatar from "./UserAvatar";
+import { useActivity } from "../lib/activityApi";
+import { stubOf, useAccountSearch, type PersonStub } from "../lib/usersApi";
 
 function ago(ms: number) {
   const s = Math.floor(ms / 1000);
@@ -13,98 +12,30 @@ function ago(ms: number) {
   if (s < 60) return `${s}s ago`;
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m ago`;
-  return `${Math.floor(m / 60)}h ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
-function randomEvent(id: number, at: number): Event {
-  return {
-    id,
-    name: PEOPLE[Math.floor(Math.random() * PEOPLE.length)].name,
-    text: ACTIVITIES[Math.floor(Math.random() * ACTIVITIES.length)],
-    at,
-  };
-}
-
-const SEED_COUNT = 7;
+const FEED_SIZE = 14;
 
 export default function Social() {
-  const { session } = useAuth();
-  const token = session?.access_token;
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<AccountHit[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [selected, setSelected] = useState<Person | null>(null);
-  const nextId = useRef(SEED_COUNT);
-  const [events, setEvents] = useState<Event[]>(() => {
-    const now = Date.now();
-    return Array.from({ length: SEED_COUNT }, (_, i) =>
-      randomEvent(i, now - (i + 1) * 1000 * (40 + i * 55)),
-    );
-  });
-  const [, tick] = useState(0);
+  const { q, results, searching } = useAccountSearch(query);
+  const [selected, setSelected] = useState<PersonStub | null>(null);
+  const events = useActivity(FEED_SIZE);
+  const [now, setNow] = useState(() => Date.now());
 
-  // new activity drops in, and timestamps stay honest between drops
+  // timestamps stay honest between polls
   useEffect(() => {
-    const add = setInterval(() => {
-      setEvents((prev) => [randomEvent(nextId.current++, Date.now()), ...prev].slice(0, 14));
-    }, 5000);
-    const clock = setInterval(() => tick((t) => t + 1), 1000);
-    return () => {
-      clearInterval(add);
-      clearInterval(clock);
-    };
+    const clock = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(clock);
   }, []);
-
-  // usernames are [a-z0-9_], so the query collapses to that before it's sent
-  const q = query.trim().toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20);
-
-  useEffect(() => {
-    if (!q || !token) {
-      setResults([]);
-      setSearching(false);
-      return;
-    }
-    setSearching(true);
-    const timer = setTimeout(() => {
-      searchUsers(token, q)
-        .then(setResults)
-        .catch(() => setResults([]))
-        .finally(() => setSearching(false));
-    }, 200); // debounce — one request per pause, not per keystroke
-    return () => clearTimeout(timer);
-  }, [q, token]);
-
-  const openCard = (hit: AccountHit) => {
-    if (!token) return;
-    getUserCard(token, hit.id)
-      .then((person) => {
-        setSelected(person);
-        setQuery("");
-      })
-      .catch((err) => console.error("card load failed", err));
-  };
 
   return (
     <div className="social">
       <div className="search-wrap">
-        <div className="search">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden>
-            <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.6" />
-            <path d="M16 16 L21 21" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="search accounts"
-            aria-label="search accounts"
-          />
-          {query && (
-            <button className="search-clear" type="button" onClick={() => setQuery("")} aria-label="clear">
-              ×
-            </button>
-          )}
-        </div>
-
+        <SearchField value={query} onChange={setQuery} />
       </div>
 
       {q ? (
@@ -116,23 +47,14 @@ export default function Social() {
             </span>
           </div>
 
-          <ul className="results">
-            {results.length === 0 && !searching && (
-              <li className="result-empty">no accounts found</li>
-            )}
-            {results.map((u) => {
-              const name = displayName(u) || u.username;
-              return (
-                <li key={u.id}>
-                  <button type="button" onClick={() => openCard(u)}>
-                    <Avatar name={name} tone={toneFor(name)} size={30} />
-                    <span className="result-name">{name}</span>
-                    <span className="result-handle">@{u.username}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+          <AccountList
+            results={results}
+            searching={searching}
+            onPick={(hit) => {
+              setSelected(stubOf(hit));
+              setQuery("");
+            }}
+          />
         </div>
       ) : (
         <div className="feed">
@@ -144,13 +66,14 @@ export default function Social() {
           </div>
 
           <ul className="feed-list">
-            {events.map((e) => (
+            {events?.length === 0 && <li className="result-empty">nobody else has logged anything yet</li>}
+            {events?.map((e) => (
               <li className="feed-item" key={e.id}>
-                <Avatar name={e.name} tone={toneFor(e.name)} size={30} />
+                <UserAvatar user={e.person} size={30} />
                 <span className="feed-text">
-                  <strong>{e.name}</strong> {e.text}!
+                  <strong>{e.person.name}</strong> {e.text}!
                 </span>
-                <span className="feed-time">{ago(Date.now() - e.at)}</span>
+                <span className="feed-time">{ago(now - e.at)}</span>
               </li>
             ))}
           </ul>

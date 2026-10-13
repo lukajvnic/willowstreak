@@ -15,7 +15,9 @@ browser ──signup/login/refresh──> Supabase Auth        (@supabase/supaba
 
 ## v1 scope
 
-Users, habits, and habit entries. Friendships and leaderboards are not in v1.
+Users (with avatars), habits, habit entries, leaderboards, an activity feed,
+and reminders. Friendships are not in v1 — so everything social is visible to
+every signed-in user, not to a friends list.
 
 ## Authorization lives in SQL
 
@@ -37,9 +39,13 @@ This is the opposite of enforcing access in Python. Consequences worth knowing:
   the query. That's defence in depth, and it's what turns "invisible row" into a
   clean 404.
 - Anything needing to see past RLS is an explicit `security definer` function
-  with a deliberately narrow return. `username_available()` is the only one: it
-  returns a bare boolean, because a caller genuinely cannot see whether someone
-  else already holds a name.
+  with a deliberately narrow return. `username_available()` returns a bare
+  boolean, because a caller genuinely cannot see whether someone else already
+  holds a name. `search_users()`, `get_user_card()`, `get_user_habits()`,
+  `get_user_grids()`, `get_leaderboards()` and `get_activity()` are the social
+  reads: each exists to show the caller a named slice of other people's rows.
+  With no friendships yet, that slice covers every account — narrowing it later
+  is a join inside these functions.
 - `get_my_stats()` is `security invoker` on purpose — it inherits the caller's
   policies, so it needs no user argument and can't be pointed at someone else.
 
@@ -91,7 +97,7 @@ supabase db push
 uv run pytest
 ```
 
-41 tests, no Docker and no Supabase project required:
+83 tests, no Docker and no Supabase project required:
 
 - **`test_api.py`** (30) drives the real app through `TestClient` with
   `dependency_overrides` swapping in an in-memory fake client
@@ -135,12 +141,30 @@ Errors share one envelope:
 GET   /api/me                              -> {user} | 404 profile_not_created
 POST  /api/me   {username, first_name, last_name?, bio?}
                                            -> 201 {user} | 409 username_taken
-PATCH /api/me   {first_name?, last_name?, bio?, avatar_path?}  -> {user}
+PATCH /api/me   {first_name?, last_name?, bio?, avatar?, avatar_path?}  -> {user}
 GET   /api/me/stats                        -> {stats}
 GET   /api/usernames/{username}/available  -> {"available": bool}
 GET   /api/users?search=<prefix>            -> {users: [...]}  (username startswith)
 GET   /api/users/{id}/card                  -> {card}  (public profile + streak/best/tracked)
+GET   /api/users/{id}/habits                -> {habits: [{name, type, goal, unit}]}
+GET   /api/users/{id}/habits?include=entries&from=YYYY-MM-DD&to=YYYY-MM-DD
+                                            -> {habits: [{..., entries: [{entry_date, value}]}]}
 ```
+
+`/users/{id}/habits` is someone's unarchived habits, definition only — no ids.
+The new-habit dialog copies from it. With `include=entries` it also carries a
+window of days, which is what a profile draws its grids from (your own
+included). An unknown id is an empty list.
+
+**Avatars.** `avatar` is the drawn figure, `{skin: "#RRGGBB", head, shirt}` with
+`head`/`shirt` being item ids from the frontend's kit. `avatar_path` is the
+uploaded head photo: a path in the public `avatars` Storage bucket. The browser
+uploads the file itself (supabase-js, the caller's session — the one write that
+doesn't come through this API) and then `PATCH`es the path here. Storage RLS
+only allows writes under a folder named after your user id, and the API rejects
+a path outside that folder with **422 `avatar_path_not_yours`**. `null` clears
+it. Search hits, cards, leaderboard rows and activity items all carry both
+fields, so a client can draw anyone.
 
 `404` on `GET /api/me` is **not an error** — it's how you know to show a username
 picker after a first signup. Usernames are `^[a-z0-9_]{2,20}$`, stored lowercase;
@@ -156,6 +180,61 @@ render the `@` yourself.
 
 `streak` counts today **or** yesterday as live, so an unlogged today doesn't zero
 a running streak. Entries with `value = 0` don't count toward one.
+
+### Social
+
+```
+GET /api/leaderboards?today=YYYY-MM-DD&week_start=YYYY-MM-DD  -> {boards: [...]}
+GET /api/activity?limit=20                                     -> {activity: [...]}
+```
+
+```jsonc
+{"boards": [{"habit": "gym", "type": "completion", "unit": "",
+             "entries": [{"user": {"id": "uuid", "username": "sam", "first_name": "Sam",
+                                   "last_name": "R", "avatar": null, "avatar_path": null},
+                          "value": "4"}]}]}
+
+{"activity": [{"id": "uuid", "user": {...}, "habit": "reading", "type": "count",
+               "unit": "min", "value": "45", "entry_date": "2026-10-13",
+               "logged_at": "2026-10-13T18:02:11Z"}]}
+```
+
+**Leaderboards:** one board per habit *the caller* tracks, ranking everyone with
+an unarchived habit of the same name (`habits.name_key` — lowercased, trimmed).
+A `completion` board ranks by current streak in days; a `count` board by the
+total for the week starting `week_start`, and only among people counting in the
+same unit. Entries arrive ranked, at most 100 a board, and people at zero are
+included. Both dates are the client's local dates: `week_start` must be within
+the six days before `today` or it's **422 `week_start_out_of_range`**.
+
+**Activity:** the most recent logged days from everyone except the caller,
+newest first, `limit` 1–50. A recorded zero isn't included. `id` is the entry's
+id, so a polling client can tell what it has already shown.
+
+### Reminders — the to-do tab
+
+```
+GET    /api/reminders                 -> {reminders: [...], categories: [...]}
+POST   /api/reminders                 -> 201 {reminder} | 409 reminder_exists
+PATCH  /api/reminders/{id}  {done}    -> {reminder}
+DELETE /api/reminders/{id}            -> 204
+POST   /api/reminder-categories  {id?, name, icon?}  -> 201 {category}
+```
+
+```jsonc
+{"reminder": {"id": "uuid", "title": "dentist", "kind": "anchor", "done": false,
+              "start_date": "2026-11-02", "end_date": null, "at_time": "09:30:00",
+              "place": "king st", "category_id": "health"}}
+```
+
+`kind` decides the shape, enforced by `ck_reminder_dates` and mirrored in
+pydantic (**422**): `refile`/`backlog` carry no dates; a `floater` needs
+`start_date` and `end_date`; an `anchor` needs `start_date` and may have
+`at_time`. **`id` is optional and normally sent by the client** — the tab draws
+the row before the request returns, and a client-made id means that row is
+already the saved one; replaying a create is a 409, not a duplicate.
+`category_id` is plain text: either a built-in slug the client owns (`work`,
+`health`...) or the id of one of the caller's `categories`.
 
 ### Habits
 

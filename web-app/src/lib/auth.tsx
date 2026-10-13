@@ -2,12 +2,20 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { api } from "./api";
+import type { AvatarLook } from "./avatarKit";
 
+/** the caller's own row, as GET /api/me returns it */
 export type Profile = {
   id: string;
   username: string;
   first_name: string;
   last_name: string;
+  bio: string;
+  /** the drawn figure — null until they first change it */
+  avatar: AvatarLook | null;
+  /** the uploaded head photo, a path in the `avatars` bucket */
+  avatar_path: string | null;
+  created_at: string | null;
 };
 
 /** `null` while unknown, `'none'` when the API says 404 (no profile row yet). */

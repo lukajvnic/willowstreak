@@ -1,9 +1,13 @@
+from datetime import date
+
 from supabase import Client
 
 from app.core.auth import CurrentUser
 from app.modules.users.schemas import (
     UserCardResponse,
     UserCreateRequest,
+    UserGridsResponse,
+    UserHabitsResponse,
     UsernameAvailableResponse,
     UserResponse,
     UserSearchResponse,
@@ -14,6 +18,8 @@ from app.modules.users.service import (
     create_user,
     get_stats,
     get_user_card,
+    get_user_grids,
+    get_user_habits,
     require_user,
     search_users,
     update_user,
@@ -53,3 +59,13 @@ def search_users_controller(client: Client, prefix: str) -> UserSearchResponse:
 
 def user_card_controller(client: Client, user_id: str) -> UserCardResponse:
     return UserCardResponse(card=get_user_card(client, user_id))
+
+
+def user_habits_controller(client: Client, user_id: str) -> UserHabitsResponse:
+    return UserHabitsResponse(habits=get_user_habits(client, user_id))
+
+
+def user_grids_controller(
+    client: Client, user_id: str, date_from: date, date_to: date
+) -> UserGridsResponse:
+    return UserGridsResponse(habits=get_user_grids(client, user_id, date_from, date_to))
