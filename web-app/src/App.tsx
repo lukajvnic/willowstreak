@@ -60,20 +60,22 @@ export default function App() {
 
   return (
     <main className="page" data-tab={tab}>
-      <h1 className="wordmark">willo</h1>
+      <header className="masthead">
+        <nav className="brand">
+          <span className="brand-mark">willowstreak</span>
 
-      <div className="topbar">
-        <nav className="nav">
-          {NAV.map((item) => (
-            <button
-              key={item}
-              type="button"
-              data-active={item === tab}
-              onClick={() => setTab(item)}
-            >
-              {item}
-            </button>
-          ))}
+          <div className="nav">
+            {NAV.map((item) => (
+              <button
+                key={item}
+                type="button"
+                data-active={item === tab}
+                onClick={() => setTab(item)}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
         </nav>
 
         <button
@@ -84,7 +86,7 @@ export default function App() {
         >
           <AvatarPreview tone={skin} photo={photo} head={worn.head} shirt={worn.shirt} size={34} crop />
         </button>
-      </div>
+      </header>
 
       {tab === "habits" && (
         <>
