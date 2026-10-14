@@ -78,20 +78,44 @@ keeps the stats but drops the today card. it stays at 24 weeks on purpose — a 
 
 ## new habit dialog
 
-`NewHabit.tsx` is one modal with three tabs (`.auth-tabs`, reused from the auth
-card): `custom` (the form), `presets` (`PRESETS` in `src/lib/habits.ts`) and
-`copy someone's` (account search, then that account's habits). only one shows at
-a time. presets and copied habits never create anything directly — picking one
-calls `fill()`, which loads it into the form and switches to `custom`, so there
-is a single create path with the colour picker and the "you already track that"
-check. rows for a habit you already track are disabled and read `tracking`.
+two pieces, reworked twice on 2026-10-13 at Luka's request (first as in-dialog
+tabs, then as this — the tabs are gone and should not come back).
 
-`.new-body` is a fixed 268px frame so switching tabs never resizes the modal:
-the form pins its button to the bottom, the lists scroll inside. the modal is a
-`div` and only the `custom` pane is a `<form>` — otherwise enter in the search
-box would submit the half-filled form behind it.
+`NewHabitMenu.tsx` is the `new habit` link on the habits tab plus the dropdown it
+opens: `custom`, `preset`, `join a friend`, each with an inline svg to its left
+(pencil, four grid cells, two people — hand-drawn 24px strokes like every other
+icon here, there is no icon library). it closes on outside mousedown and escape,
+the same way `Heatmap` closes its popover. `.add-menu` is centred under the link
+by a fixed width, not a transform, because `drop-in` animates transform.
 
-the copy tab's search and the social tab's search are the same pieces:
+picking an option opens `NewHabit.tsx` with that `mode` as a prop (`App` holds
+`adding: Mode | null`). the dialog shows only that one pane, titled for it, with
+no way to switch — close and reopen for another. the panes: the form (`custom`),
+`PRESETS` from `src/lib/habits.ts` (`presets`), or account search then that
+account's habits (`copy`, labelled `join a friend` — it still copies the
+definition, there is no shared habit).
+
+a preset or a friend's habit is **created as picked**. clicking a row only
+selects it (`data-active`, an inset ring in the chosen ramp colour); it never
+loads the custom form — Luka did not want that. the footer is the same on all
+three: the colour row (the only place a colour is ever chosen, so presets need it
+too), `create habit`, and beside it either "you already track that" (custom) or
+what is picked ("gym preset", "running from @maya"). `draft` in the component is
+whatever the button would create right now; null disables it. clearing the
+account clears the pick. rows for a habit you already track are disabled and
+read `tracking`.
+
+the modal sizes to its content and is vertically centred by `margin-block:
+auto` (Luka tried a fixed 600px height first and dropped it the same day). auto
+margins and not `align-items: center`, so a window too short for it scrolls from
+the top. `max-height: max(100%, 400px)` stops it at the scrim's padding;
+`.new-pane` is the piece that gives then — lists scroll inside it, the colour
+row and button stay put. so the `join a friend` dialog grows and shrinks as
+results come and go, which is intended. the body is a `<form>` in every mode:
+enter in the search box can't create anything because no habit is picked while
+that box is on screen.
+
+the `join a friend` search and the social tab's search are the same pieces:
 `useAccountSearch` (`src/lib/usersApi.ts`), `SearchField`, `AccountList`. once an
 account is picked the search pill is reused as a chip showing who it is, with ×
 to go back. your own account is filtered out of the copy results.
