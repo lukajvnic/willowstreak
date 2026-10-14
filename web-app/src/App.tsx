@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import ActivityBubbles from "./components/ActivityBubbles";
 import AuthGate from "./components/AuthGate";
 import Heatmap from "./components/Heatmap";
-import NewHabit from "./components/NewHabit";
+import NewHabit, { type Mode } from "./components/NewHabit";
+import NewHabitMenu from "./components/NewHabitMenu";
 import Leaderboard from "./components/Leaderboard";
 import Social from "./components/Social";
 import ProfileModal from "./components/ProfileModal";
@@ -27,7 +28,7 @@ export default function App() {
   const [tab, setTab] = useState("habits");
   const [habits, setHabits] = useState<HabitWithEntries[] | null>(null);
   const [loadError, setLoadError] = useState("");
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<Mode | null>(null);
   const [showMe, setShowMe] = useState(false);
   const { photo, skin, worn } = useAvatarState();
 
@@ -90,9 +91,7 @@ export default function App() {
         <>
           <ActivityBubbles />
 
-          <button className="add-habit" type="button" onClick={() => setAdding(true)}>
-            new habit
-          </button>
+          <NewHabitMenu onPick={setAdding} />
 
           {habits === null ? (
             <p className="foot">{loadError ? `couldn't load habits — ${loadError}` : "loading…"}</p>
@@ -124,6 +123,7 @@ export default function App() {
 
       {adding && token && (
         <NewHabit
+          mode={adding}
           taken={(habits ?? []).map((h) => h.habit.name)}
           onCreate={(draft) => {
             const rampName = (Object.keys(RAMPS) as RampName[]).find(
@@ -139,7 +139,7 @@ export default function App() {
               })
               .catch((err) => console.error("habit create failed", err));
           }}
-          onClose={() => setAdding(false)}
+          onClose={() => setAdding(null)}
         />
       )}
 

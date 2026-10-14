@@ -414,8 +414,13 @@ div.today .today-line {
 
 /* ---------- new habit ---------- */
 
-.add-habit {
+/* the trigger and the menu it drops */
+.add-wrap {
+  position: relative;
   margin-top: 20px;
+}
+
+.add-habit {
   border: 0;
   padding: 0;
   background: transparent;
@@ -429,31 +434,82 @@ div.today .today-line {
   transition: color 150ms ease, text-decoration-color 150ms ease;
 }
 
-.add-habit:hover {
+.add-habit:hover,
+.add-habit[aria-expanded="true"] {
   color: var(--ink);
   text-decoration-color: rgba(255, 255, 255, 0.5);
 }
 
-.new-modal { max-width: 440px; }
+/* centred under the trigger by a fixed width, not a transform — `drop-in`
+   animates transform and would fight it */
+.add-menu {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 10px);
+  left: calc(50% - 86px);
+  width: 172px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--dune-lift);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+  animation: drop-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
 
-.new-modal .auth-tabs { margin-bottom: 16px; }
+.add-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease;
+}
 
-/* one fixed frame for all three ways in, so switching tabs never resizes the
-   modal — the form pins its button to the bottom, the lists scroll inside */
+.add-menu button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+}
+
+.add-menu svg { width: 17px; height: 17px; flex: none; }
+
+/* as tall as what it holds, centred by its auto margins — `margin: auto`
+   rather than `align-items: center` so a short window scrolls from the top
+   instead of cropping it. past the scrim's padding it stops growing and the
+   list inside scrolls */
+.new-modal {
+  max-width: 440px;
+  max-height: max(100%, 400px);
+  margin-block: auto;
+  display: flex;
+  flex-direction: column;
+}
+
 .new-body {
-  height: 268px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* the part that differs by mode. it's the one piece that gives when the modal
+   hits its max height, so the colour row and the button never scroll away */
+.new-pane {
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 13px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-
-.new-form {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.new-form .new-actions { margin-top: auto; }
 
 .new-body .search { flex: none; }
 
@@ -474,6 +530,12 @@ div.today .today-line {
 }
 
 .new-body .results li { flex: none; }
+
+/* inset, or the list's own overflow would shave the ring */
+.new-body .results button[data-active="true"] {
+  background: var(--dune-lift);
+  box-shadow: inset 0 0 0 1.5px var(--c4);
+}
 
 .new-grid {
   display: flex;
@@ -583,6 +645,7 @@ div.today .today-line {
 }
 
 .new-create {
+  flex: none;
   padding: 10px 20px;
   border-radius: 999px;
   border: 0;
@@ -599,6 +662,15 @@ div.today .today-line {
 .new-warn {
   font-size: 12px;
   color: #D08A72;
+}
+
+.new-note {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .foot {
@@ -1412,6 +1484,7 @@ div.today .today-line {
 
 @media (prefers-reduced-motion: reduce) {
   .feed-item,
+  .add-menu,
   .modal,
   .scrim { animation: none; }
   .activity-bubble { transition: none; }
