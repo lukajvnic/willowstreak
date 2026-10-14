@@ -6,6 +6,7 @@ import {
   covers,
   DEFAULT_CATEGORIES,
   fmtDay,
+  fmtDuration,
   fmtTime,
   kindInfo,
   kindOrder,
@@ -21,6 +22,7 @@ import {
   createCategory,
   createReminder,
   deleteReminder,
+  editReminder,
   loadTodos,
   setReminderDone,
 } from "../lib/todosApi";
@@ -46,7 +48,8 @@ function dayLabel(key: string): string {
 
 function meta(r: Reminder): string | null {
   if (r.kind === "anchor" && r.start) {
-    return [dayLabel(r.start), r.time && fmtTime(r.time), r.place].filter(Boolean).join(" · ");
+    const at = r.time && (r.duration ? `${fmtTime(r.time)} for ${fmtDuration(r.duration)}` : fmtTime(r.time));
+    return [dayLabel(r.start), at, r.place].filter(Boolean).join(" · ");
   }
   if (r.kind === "floater" && r.start) {
     return `${dayLabel(r.start)} — ${dayLabel(r.end ?? r.start)}`;
@@ -60,10 +63,11 @@ type RowProps = {
   /** in one merged list the section headings are gone, so each row names its own kind */
   showKind: boolean;
   onToggle: (id: string) => void;
+  onEdit: (r: Reminder) => void;
   onDrop: (id: string) => void;
 };
 
-function Row({ r, category, showKind, onToggle, onDrop }: RowProps) {
+function Row({ r, category, showKind, onToggle, onEdit, onDrop }: RowProps) {
   const detail = meta(r);
 
   return (
@@ -84,7 +88,7 @@ function Row({ r, category, showKind, onToggle, onDrop }: RowProps) {
         </svg>
       </button>
 
-      <span className="reminder-body">
+      <button className="reminder-body" type="button" onClick={() => onEdit(r)} aria-label={`edit ${r.title}`}>
         <span className="reminder-title">
           {category && (
             <span className="reminder-cat" title={category.name}>
@@ -100,7 +104,19 @@ function Row({ r, category, showKind, onToggle, onDrop }: RowProps) {
             {detail}
           </span>
         )}
-      </span>
+      </button>
+
+      <button className="reminder-edit" type="button" onClick={() => onEdit(r)} aria-label="edit">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden>
+          <path
+            d="M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
 
       <button className="reminder-drop" type="button" onClick={() => onDrop(r.id)} aria-label="delete">
         ×
@@ -143,6 +159,7 @@ export default function Todo() {
   const [selected, setSelected] = useState<string | null>(null);
   const [catFilter, setCatFilter] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Reminder | null>(null);
   const [split, setSplit] = useState(true);
   const [sort, setSort] = useState<SortMode>("priority");
 
@@ -157,6 +174,11 @@ export default function Todo() {
     const done = !reminders.find((r) => r.id === id)?.done;
     setReminders((prev) => prev.map((r) => (r.id === id ? { ...r, done } : r)));
     save((t) => setReminderDone(t, id, done));
+  };
+
+  const edit = (next: Reminder) => {
+    setReminders((prev) => prev.map((r) => (r.id === next.id ? next : r)));
+    save((t) => editReminder(t, next));
   };
 
   const drop = (id: string) => {
@@ -282,7 +304,7 @@ export default function Todo() {
 
                   <ul className="reminder-list">
                     {group.map((r) => (
-                      <Row key={r.id} r={r} category={catOf(r)} showKind={false} onToggle={toggle} onDrop={drop} />
+                      <Row key={r.id} r={r} category={catOf(r)} showKind={false} onToggle={toggle} onEdit={setEditing} onDrop={drop} />
                     ))}
                   </ul>
                 </div>
@@ -291,19 +313,28 @@ export default function Todo() {
           ) : (
             <ul className="reminder-list">
               {sortReminders(shown, sort).map((r) => (
-                <Row key={r.id} r={r} category={catOf(r)} showKind onToggle={toggle} onDrop={drop} />
+                <Row key={r.id} r={r} category={catOf(r)} showKind onToggle={toggle} onEdit={setEditing} onDrop={drop} />
               ))}
             </ul>
           )}
         </div>
       </section>
 
-      <Calendar reminders={reminders} selected={selected} onSelect={setSelected} />
+      <Calendar
+        reminders={reminders}
+        selected={selected}
+        onSelect={setSelected}
+        onResize={(r, minutes) => edit({ ...r, duration: minutes })}
+      />
 
-      {adding && (
+      {(adding || editing) && (
         <AddReminder
+          // a fresh dialog per reminder, so its fields start from that one
+          key={editing?.id ?? "new"}
           categories={categories}
+          initial={editing ?? undefined}
           onAdd={(r) => {
+            if (editing) return edit(r);
             setReminders((prev) => [...prev, r]);
             save((t) => createReminder(t, r));
           }}
@@ -311,7 +342,10 @@ export default function Todo() {
             setCategories((prev) => [...prev, c]);
             save((t) => createCategory(t, c));
           }}
-          onClose={() => setAdding(false)}
+          onClose={() => {
+            setAdding(false);
+            setEditing(null);
+          }}
         />
       )}
     </div>

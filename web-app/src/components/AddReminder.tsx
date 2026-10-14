@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  DEFAULT_DURATION,
   KINDS,
   kindInfo,
   LABEL_TAG,
+  MAX_DURATION,
+  MIN_DURATION,
   shiftKey,
   todayKey,
   type Category,
@@ -12,19 +15,25 @@ import {
 
 type Props = {
   categories: Category[];
+  /** when set, the dialog edits this reminder instead of making a new one */
+  initial?: Reminder;
   onAdd: (r: Reminder) => void;
   onCreateCategory: (c: Category) => void;
   onClose: () => void;
 };
 
-export default function AddReminder({ categories, onAdd, onCreateCategory, onClose }: Props) {
-  const [title, setTitle] = useState("");
-  const [kind, setKind] = useState<Kind | null>(null);
-  const [category, setCategory] = useState<string | null>(null);
-  const [start, setStart] = useState(todayKey());
-  const [end, setEnd] = useState(shiftKey(todayKey(), 7));
-  const [time, setTime] = useState("09:00");
-  const [place, setPlace] = useState("");
+export default function AddReminder({ categories, initial, onAdd, onCreateCategory, onClose }: Props) {
+  const editing = initial !== undefined;
+  const [title, setTitle] = useState(initial?.title ?? "");
+  const [kind, setKind] = useState<Kind | null>(initial?.kind ?? null);
+  const [category, setCategory] = useState<string | null>(initial?.categoryId ?? null);
+  const [start, setStart] = useState(initial?.start ?? todayKey());
+  const [end, setEnd] = useState(initial?.end ?? shiftKey(initial?.start ?? todayKey(), 7));
+  const [time, setTime] = useState(initial?.time ?? "09:00");
+  const startLength = initial?.duration ?? DEFAULT_DURATION;
+  const [hours, setHours] = useState(String(Math.floor(startLength / 60)));
+  const [mins, setMins] = useState(String(startLength % 60));
+  const [place, setPlace] = useState(initial?.place ?? "");
   const [creatingCat, setCreatingCat] = useState(false);
   const [newIcon, setNewIcon] = useState("");
   const [newName, setNewName] = useState("");
@@ -47,23 +56,38 @@ export default function AddReminder({ categories, onAdd, onCreateCategory, onClo
   const named = title.trim().length > 0;
 
   function save(k: Kind) {
-    // the id is made here and kept by the server, so the row is real from the first paint
-    const base = { id: crypto.randomUUID(), title: title.trim(), kind: k, done: false, categoryId: category ?? undefined };
+    // the id is made here and kept by the server, so the row is real from the first paint.
+    // an edit keeps the original's id and done state
+    const base = {
+      id: initial?.id ?? crypto.randomUUID(),
+      title: title.trim(),
+      kind: k,
+      done: initial?.done ?? false,
+      categoryId: category ?? undefined,
+    };
     if (k === "floater") {
       const [a, b] = start <= end ? [start, end] : [end, start];
       onAdd({ ...base, start: a, end: b });
     } else if (k === "anchor") {
-      onAdd({ ...base, start, time, place: place.trim() || undefined });
+      const length = Math.min(
+        MAX_DURATION,
+        Math.max(MIN_DURATION, (Number(hours) || 0) * 60 + (Number(mins) || 0)),
+      );
+      // the default hour stays unset, so it's never stored unless asked for — but
+      // one that already had a length keeps sending it, so going back to 1h saves
+      const duration = length !== DEFAULT_DURATION || initial?.duration !== undefined ? length : undefined;
+      onAdd({ ...base, start, time, duration, place: place.trim() || undefined });
     } else {
       onAdd(base);
     }
     onClose();
   }
 
-  // refile and backlog need nothing else — they file straight away
+  // refile and backlog need nothing else — a new one files straight away. an edit
+  // always waits for save, since the title or category may still be changing
   function pick(k: Kind) {
     if (!named) return titleRef.current?.focus();
-    if (kindInfo(k).needs === "nothing") return save(k);
+    if (!editing && kindInfo(k).needs === "nothing") return save(k);
     setKind(k);
   }
 
@@ -85,7 +109,7 @@ export default function AddReminder({ categories, onAdd, onCreateCategory, onClo
           ×
         </button>
 
-        <h3 className="add-title">new reminder</h3>
+        <h3 className="add-title">{editing ? "edit reminder" : "new reminder"}</h3>
 
         <input
           ref={titleRef}
@@ -197,6 +221,31 @@ export default function AddReminder({ categories, onAdd, onCreateCategory, onClo
               <label htmlFor="at">at</label>
               <input id="at" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
             </div>
+            <div className="field">
+              <label htmlFor="lasts">lasts</label>
+              <span className="length">
+                <input
+                  id="lasts"
+                  type="number"
+                  min={0}
+                  max={24}
+                  value={hours}
+                  onChange={(e) => setHours(e.target.value)}
+                  aria-label="hours"
+                />
+                <span>h</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={59}
+                  step={5}
+                  value={mins}
+                  onChange={(e) => setMins(e.target.value)}
+                  aria-label="minutes"
+                />
+                <span>m</span>
+              </span>
+            </div>
             <div className="field wide">
               <label htmlFor="where">where</label>
               <input
@@ -210,8 +259,8 @@ export default function AddReminder({ categories, onAdd, onCreateCategory, onClo
         )}
 
         {kind && (
-          <button className="add-save" type="button" onClick={() => save(kind)}>
-            add {kind}
+          <button className="add-save" type="button" onClick={() => named && save(kind)} disabled={!named}>
+            {editing ? "save changes" : `add ${kind}`}
           </button>
         )}
       </div>

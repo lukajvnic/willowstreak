@@ -5,6 +5,7 @@ from app.modules.reminders.schemas import (
     CategoryCreateRequest,
     CategoryResponse,
     ReminderCreateRequest,
+    ReminderEditRequest,
     ReminderResponse,
     RemindersResponse,
     ReminderUpdateRequest,
@@ -13,6 +14,7 @@ from app.modules.reminders.service import (
     create_category,
     create_reminder,
     delete_reminder,
+    edit_reminder,
     list_categories,
     list_reminders,
     set_reminder_done,
@@ -37,6 +39,14 @@ def update_reminder_controller(
 ) -> ReminderResponse:
     return ReminderResponse(
         reminder=set_reminder_done(client, current_user.id, reminder_id, payload.done)
+    )
+
+
+def edit_reminder_controller(
+    current_user: CurrentUser, client: Client, reminder_id: str, payload: ReminderEditRequest
+) -> ReminderResponse:
+    return ReminderResponse(
+        reminder=edit_reminder(client, current_user.id, reminder_id, payload)
     )
 
 

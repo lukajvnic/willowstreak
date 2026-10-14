@@ -11,6 +11,8 @@ export type Reminder = {
   end?: string;
   /** anchor only */
   time?: string;
+  /** anchor only — minutes it lasts. unset draws as DEFAULT_DURATION */
+  duration?: number;
   place?: string;
   /** free-form grouping — school, work, exercise... — orthogonal to kind */
   categoryId?: string;
@@ -128,6 +130,27 @@ export function fmtTime(time: string): string {
   const suffix = h < 12 ? "am" : "pm";
   const hour = h % 12 === 0 ? 12 : h % 12;
   return `${hour}:${`${m}`.padStart(2, "0")}${suffix}`;
+}
+
+/** how long an anchor with no length of its own is drawn, in minutes */
+export const DEFAULT_DURATION = 60;
+/** the shortest and longest an anchor can last, matching the db check */
+export const MIN_DURATION = 5;
+export const MAX_DURATION = 24 * 60;
+
+/** "1h 30m", "45m", "2h" */
+export function fmtDuration(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (!h) return `${m}m`;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+/** the HH:MM an anchor ends at — wraps past midnight like a clock does */
+export function endTime(time: string, minutes: number): string {
+  const [h, m] = time.split(":").map(Number);
+  const total = (h * 60 + m + minutes) % (24 * 60);
+  return `${`${Math.floor(total / 60)}`.padStart(2, "0")}:${`${total % 60}`.padStart(2, "0")}`;
 }
 
 /** the seven day keys of the Sun..Sat week containing `key` */

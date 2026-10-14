@@ -10,6 +10,8 @@ type ApiReminder = {
   start_date: string | null;
   end_date: string | null;
   at_time: string | null;
+  /** absent until the duration migration is applied */
+  duration_minutes?: number | null;
   place: string;
   category_id: string | null;
 };
@@ -24,6 +26,7 @@ function toReminder(row: ApiReminder): Reminder {
     end: row.end_date ?? undefined,
     // postgres hands a time back with seconds; the tab works in HH:MM
     time: row.at_time?.slice(0, 5),
+    duration: row.duration_minutes ?? undefined,
     place: row.place || undefined,
     categoryId: row.category_id ?? undefined,
   };
@@ -52,11 +55,28 @@ export async function createReminder(token: string, r: Reminder): Promise<void> 
     start_date: r.start ?? null,
     end_date: r.end ?? null,
     at_time: r.time ?? null,
+    duration_minutes: r.duration ?? null,
     place: r.place ?? "",
     category_id: r.categoryId ?? null,
   };
   const res = await api("/api/reminders", { method: "POST", token, body });
   if (!res.ok) throw new Error(`reminder save failed (${res.status})`);
+}
+
+/** rewrites everything the reminder says; `done` isn't touched */
+export async function editReminder(token: string, r: Reminder): Promise<void> {
+  const body = {
+    title: r.title,
+    kind: r.kind,
+    start_date: r.start ?? null,
+    end_date: r.end ?? null,
+    at_time: r.time ?? null,
+    duration_minutes: r.duration ?? null,
+    place: r.place ?? "",
+    category_id: r.categoryId ?? null,
+  };
+  const res = await api(`/api/reminders/${r.id}`, { method: "PUT", token, body });
+  if (!res.ok) throw new Error(`reminder edit failed (${res.status})`);
 }
 
 export async function setReminderDone(token: string, id: string, done: boolean): Promise<void> {

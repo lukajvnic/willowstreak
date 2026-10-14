@@ -10,6 +10,7 @@ from app.modules.reminders.controller import (
     create_category_controller,
     create_reminder_controller,
     delete_reminder_controller,
+    edit_reminder_controller,
     list_reminders_controller,
     update_reminder_controller,
 )
@@ -17,6 +18,7 @@ from app.modules.reminders.schemas import (
     CategoryCreateRequest,
     CategoryResponse,
     ReminderCreateRequest,
+    ReminderEditRequest,
     ReminderResponse,
     RemindersResponse,
     ReminderUpdateRequest,
@@ -54,7 +56,19 @@ def update_reminder(
     )
 
 
-@router.delete("/reminders/{reminder_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.put("/reminders/{reminder_id}", response_model=ReminderResponse)
+def edit_reminder(
+    reminder_id: UUID,
+    payload: ReminderEditRequest,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    client: Annotated[Client, Depends(get_current_user_client)],
+) -> ReminderResponse:
+    return edit_reminder_controller(
+        current_user=current_user, client=client, reminder_id=str(reminder_id), payload=payload
+    )
+
+
+@router.delete("/reminders/{reminder_id}",status_code=status.HTTP_204_NO_CONTENT)
 def delete_reminder(
     reminder_id: UUID,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],

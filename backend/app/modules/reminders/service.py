@@ -10,6 +10,8 @@ from app.modules.reminders.schemas import (
     CategoryData,
     ReminderCreateRequest,
     ReminderData,
+    ReminderEditRequest,
+    ReminderShape,
 )
 
 REMINDERS_TABLE = "reminders"
@@ -94,22 +96,53 @@ def list_categories(client: Client, user_id: str) -> list[CategoryData]:
 def create_reminder(
     client: Client, user_id: str, payload: ReminderCreateRequest
 ) -> ReminderData:
-    row = {"user_id": user_id, **payload.model_dump(mode="json")}
+    row = {"user_id": user_id, **_shape_row(payload)}
     return ReminderData.model_validate(_insert(client, REMINDERS_TABLE, row, "reminder"))
+
+
+def _shape_row(payload: ReminderShape) -> dict[str, Any]:
+    """An unset length is left out of the write instead of sent as null — the
+    client only sends one for a reminder that has (or had) a custom length, so
+    the common case keeps working against a database that hasn't had the
+    duration_minutes migration applied yet. A stale length left on a row that
+    stopped being an anchor is harmless: only anchors are drawn with one."""
+    row = payload.model_dump(mode="json")
+    if row.get("duration_minutes") is None:
+        row.pop("duration_minutes", None)
+    return row
 
 
 def set_reminder_done(
     client: Client, user_id: str, reminder_id: str, done: bool
 ) -> ReminderData:
+    return _update(client, user_id, reminder_id, {"done": done})
+
+
+def edit_reminder(
+    client: Client, user_id: str, reminder_id: str, payload: ReminderEditRequest
+) -> ReminderData:
+    # every shape field is written, so switching kind clears the dates it no longer uses
+    return _update(client, user_id, reminder_id, _shape_row(payload))
+
+
+def _update(
+    client: Client, user_id: str, reminder_id: str, changes: dict[str, Any]
+) -> ReminderData:
     try:
         response = (
             client.table(REMINDERS_TABLE)
-            .update({"done": done})
+            .update(changes)
             .eq("id", reminder_id)
             .eq("user_id", user_id)
             .execute()
         )
     except APIError as exc:
+        if exc.code == POSTGRES_CHECK_VIOLATION:
+            raise ApiError(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                code="reminder_invalid",
+                message="That reminder isn't valid",
+            ) from exc
         raise ApiError(
             status_code=status.HTTP_502_BAD_GATEWAY,
             code="reminder_update_failed",

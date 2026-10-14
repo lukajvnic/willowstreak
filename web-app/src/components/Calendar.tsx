@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   covers,
-  dated,
+  DEFAULT_DURATION,
+  endTime,
   fmtDay,
   fmtTime,
   keyOf,
-  KINDS,
   kindInfo,
   monthGrid,
   monthName,
@@ -19,6 +19,8 @@ type Props = {
   reminders: Reminder[];
   selected: string | null;
   onSelect: (key: string | null) => void;
+  /** an anchor's bottom edge was dragged to a new length, in minutes */
+  onResize: (r: Reminder, minutes: number) => void;
 };
 
 type View = "week" | "month";
@@ -29,8 +31,9 @@ const HOURS = Array.from({ length: 24 }, (_, h) => h);
 
 /** one hour of grid, in px — the whole time column is laid out off this */
 const HOUR_H = 46;
-/** anchors are a point in time, so every block gets the same nominal length */
-const BLOCK_MIN = 60;
+/** dragging a block's length moves in steps this size, and never below one */
+const SNAP_MIN = 15;
+const DAY_MIN = 24 * 60;
 
 function hourLabel(h: number): string {
   if (h === 0) return "12am";
@@ -53,7 +56,7 @@ function weekOf(key: string): string[] {
 type Placed = { r: Reminder; start: number; lane: number };
 
 /** greedy lane assignment so two things at the same hour sit side by side */
-function place(list: Reminder[]): { placed: Placed[]; lanes: number } {
+function place(list: Reminder[], lengthOf: (r: Reminder) => number): { placed: Placed[]; lanes: number } {
   const ends: number[] = [];
   const placed = [...list]
     .sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""))
@@ -61,13 +64,13 @@ function place(list: Reminder[]): { placed: Placed[]; lanes: number } {
       const start = minutesInto(r.time!);
       let lane = ends.findIndex((end) => end <= start);
       if (lane === -1) lane = ends.length;
-      ends[lane] = start + BLOCK_MIN;
+      ends[lane] = start + lengthOf(r);
       return { r, start, lane };
     });
   return { placed, lanes: Math.max(1, ends.length) };
 }
 
-export default function Calendar({ reminders, selected, onSelect }: Props) {
+export default function Calendar({ reminders, selected, onSelect, onResize }: Props) {
   const today = todayKey();
   const [view, setView] = useState<View>("week");
   const [cursor, setCursor] = useState(today);
@@ -79,27 +82,50 @@ export default function Calendar({ reminders, selected, onSelect }: Props) {
     return () => clearInterval(id);
   }, []);
 
-  // the popped-out day is fixed-position, planted from the real screen
-  // coordinates of the column it grew out of — that's what lets it overlap
-  // past the calendar panel's own edge for the first/last day of the week
-  // instead of getting clipped by it, and it opens scrolled to the working
-  // hours (not midnight) since it carries its own hour axis now
-  const openDay = (e: React.MouseEvent<HTMLDivElement>) => {
-    const detail = e.currentTarget.querySelector<HTMLDivElement>(".day-detail");
-    if (!detail) return;
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const reach = 62; // how far past the column's own edges it's allowed to spread
-    const margin = 10; // stay clear of the browser window's own edge
-    const width = rect.width + reach * 2;
-    const left = Math.max(margin, Math.min(rect.left - reach, window.innerWidth - margin - width));
-
-    detail.style.left = `${left}px`;
-    detail.style.top = `${rect.top}px`;
-    detail.style.width = `${width}px`;
-
+  // the week grid is a full 24h scroll — open it on the working hours, not midnight
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (view !== "week" || !scrollRef.current) return;
     const hour = Math.max(0, Math.min(new Date().getHours() - 2, 15));
-    detail.scrollTop = hour * HOUR_H;
+    scrollRef.current.scrollTop = hour * HOUR_H;
+  }, [view]);
+
+  // a block being stretched shows its new length live; it's only saved on release
+  const [stretch, setStretch] = useState<{ id: string; minutes: number } | null>(null);
+  // the release that ends a drag also lands as a click on the block — swallow that one
+  const justStretched = useRef(false);
+  const lengthOf = (r: Reminder) =>
+    stretch?.id === r.id ? stretch.minutes : (r.duration ?? DEFAULT_DURATION);
+
+  const startStretch = (e: React.PointerEvent, r: Reminder, start: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const y0 = e.clientY;
+    const base = r.duration ?? DEFAULT_DURATION;
+    // it can grow to the end of its day, never past it
+    const most = Math.max(SNAP_MIN, DAY_MIN - start);
+    let minutes = base;
+
+    const move = (ev: PointerEvent) => {
+      const raw = base + ((ev.clientY - y0) / HOUR_H) * 60;
+      minutes = Math.min(most, Math.max(SNAP_MIN, Math.round(raw / SNAP_MIN) * SNAP_MIN));
+      setStretch({ id: r.id, minutes });
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      document.body.classList.remove("stretching");
+      setStretch(null);
+      justStretched.current = true;
+      setTimeout(() => (justStretched.current = false), 0);
+      if (minutes !== base) onResize(r, minutes);
+    };
+
+    document.body.classList.add("stretching");
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
 
   const cursorDate = parseKey(cursor);
@@ -118,25 +144,15 @@ export default function Calendar({ reminders, selected, onSelect }: Props) {
   }
 
   // the all-day strip — floaters read best as one continuous bar across the
-  // days they span, so they stay up here; anchors get their own per-day list
-  const banded = reminders.filter((r) => r.kind === "floater" && days.some((k) => covers(r, k)));
+  // days they span, and anchors with no time have no slot on the hour grid,
+  // so both live up here
+  const banded = reminders.filter(
+    (r) =>
+      (r.kind === "floater" || (r.kind === "anchor" && !r.time)) && days.some((k) => covers(r, k)),
+  );
 
   const nowKey = keyOf(now);
   const nowOffset = ((now.getHours() * 60 + now.getMinutes()) / 60) * HOUR_H;
-
-  // the week's stats strip — dateless kinds (refile, backlog) never belong
-  // to a specific week, so they naturally sit at zero here
-  const weekItems = view === "week" ? reminders.filter((r) => dated(r) && days.some((k) => covers(r, k))) : [];
-  const doneCount = weekItems.filter((r) => r.done).length;
-  const completionRate = weekItems.length ? Math.round((doneCount / weekItems.length) * 100) : 0;
-  const dayCounts = days.map((key) => ({
-    key,
-    count: weekItems.filter((r) => covers(r, key)).length,
-  }));
-  const busiest = dayCounts.reduce((a, b) => (b.count > a.count ? b : a), dayCounts[0]);
-  const kindCounts = Object.fromEntries(
-    KINDS.map((k) => [k.id, weekItems.filter((r) => r.kind === k.id).length]),
-  );
 
   return (
     <section className="cal panel" data-view={view}>
@@ -239,7 +255,7 @@ export default function Calendar({ reminders, selected, onSelect }: Props) {
           </div>
         </>
       ) : (
-        <div className="cal-scroll" style={{ "--cols": days.length } as React.CSSProperties}>
+        <div className="cal-scroll" ref={scrollRef} style={{ "--cols": days.length } as React.CSSProperties}>
           <div className="col-heads">
             <span className="gutter-cell" />
             {days.map((key) => {
@@ -291,81 +307,63 @@ export default function Calendar({ reminders, selected, onSelect }: Props) {
           </div>
 
           <div className="cols" style={{ "--hour": `${HOUR_H}px` } as React.CSSProperties}>
+            <div className="day-axis">
+              {HOURS.map((h) => (
+                <span className="hour-label" key={h}>
+                  {h > 0 && hourLabel(h)}
+                </span>
+              ))}
+            </div>
+
             {days.map((key) => {
-              const anchors = reminders
-                .filter((r) => r.kind === "anchor" && r.start === key)
-                // untimed first, then chronological
-                .sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
-              const timed = anchors.filter((r) => r.time);
-              const { placed, lanes } = place(timed);
-              const preview = anchors.slice(0, 3);
+              const timed = reminders.filter((r) => r.kind === "anchor" && r.start === key && r.time);
+              const { placed, lanes } = place(timed, lengthOf);
 
               return (
-                <div
-                  className="col"
-                  key={key}
-                  data-today={key === today}
-                  data-selected={key === selected}
-                  onMouseEnter={openDay}
-                >
-                  {/* the compact, always-on glance at the day — swapped out
-                      for the full hour-by-hour breakdown on hover */}
-                  <ul className="day-preview">
-                    {preview.length === 0 && <li className="day-preview-empty">—</li>}
-                    {preview.map((r) => (
-                      <li className="day-preview-item" key={r.id} data-done={r.done}>
-                        <i style={{ "--tone": kindInfo(r.kind).tone } as React.CSSProperties} />
-                        {r.time && <b>{fmtTime(r.time)}</b>}
-                        <span>{r.title}</span>
-                      </li>
+                <div className="col" key={key} data-today={key === today} data-selected={key === selected}>
+                  <div className="day-timeline">
+                    {HOURS.map((h) => (
+                      <span className="hour-line" key={h} />
                     ))}
-                    {anchors.length > preview.length && (
-                      <li className="day-preview-more">+{anchors.length - preview.length} more</li>
-                    )}
-                  </ul>
 
-                  {/* the popped-out day carries its own hour axis and scrolls
-                      independently, so it never depends on where the page
-                      itself happens to be scrolled */}
-                  <div className="day-detail">
-                    <div className="day-axis">
-                      {HOURS.map((h) => (
-                        <span className="hour-label" key={h}>
-                          {h > 0 && hourLabel(h)}
-                        </span>
-                      ))}
-                    </div>
-
-                    <div className="day-timeline">
-                      {HOURS.map((h) => (
-                        <span className="hour-line" key={h} />
-                      ))}
-
-                      {placed.map(({ r, start, lane }) => (
+                    {placed.map(({ r, start, lane }) => {
+                      // clipped at midnight — an anchor is one day
+                      const length = Math.min(lengthOf(r), DAY_MIN - start);
+                      return (
                         <button
                           key={r.id}
                           type="button"
                           className="event"
                           data-done={r.done}
+                          data-stretching={stretch?.id === r.id}
                           style={{
                             "--tone": kindInfo(r.kind).tone,
                             top: `${(start / 60) * HOUR_H}px`,
-                            height: `${(BLOCK_MIN / 60) * HOUR_H - 2}px`,
+                            height: `${(length / 60) * HOUR_H - 2}px`,
                             left: `calc(${(lane / lanes) * 100}% + 2px)`,
                             width: `calc(${100 / lanes}% - 4px)`,
                           } as React.CSSProperties}
-                          onClick={() => onSelect(key === selected ? null : key)}
+                          onClick={() => {
+                            if (justStretched.current) return;
+                            onSelect(key === selected ? null : key);
+                          }}
                         >
                           <span className="event-title">{r.title}</span>
                           <span className="event-time">
-                            {fmtTime(r.time!)}
+                            {fmtTime(r.time!)} – {fmtTime(endTime(r.time!, lengthOf(r)))}
                             {r.place && ` · ${r.place}`}
                           </span>
+                          {/* grab the bottom edge and pull to make it last longer (or shorter) */}
+                          <span
+                            className="event-stretch"
+                            aria-hidden
+                            onPointerDown={(e) => startStretch(e, r, start)}
+                          />
                         </button>
-                      ))}
+                      );
+                    })}
 
-                      {key === nowKey && <span className="now" style={{ top: `${nowOffset}px` }} />}
-                    </div>
+                    {key === nowKey && <span className="now" style={{ top: `${nowOffset}px` }} />}
                   </div>
                 </div>
               );
@@ -374,41 +372,6 @@ export default function Calendar({ reminders, selected, onSelect }: Props) {
         </div>
       )}
 
-      {view === "week" && (
-        <div className="week-stats">
-          <div className="week-stat">
-            <span className="week-stat-value">{weekItems.length}</span>
-            <span className="week-stat-label">total tasks</span>
-          </div>
-
-          <div className="week-stat">
-            <span className="week-stat-value">{weekItems.length ? `${completionRate}%` : "—"}</span>
-            <span className="week-stat-label">completion rate</span>
-          </div>
-
-          <div className="week-stat">
-            <span className="week-stat-value">
-              {busiest.count > 0 ? DOW[parseKey(busiest.key).getDay()] : "—"}
-            </span>
-            <span className="week-stat-label">
-              busiest day{busiest.count > 0 && ` · ${busiest.count}`}
-            </span>
-          </div>
-
-          <div className="week-stat week-stat-kinds">
-            <span className="week-stat-label">by priority</span>
-            <ul className="week-kinds">
-              {KINDS.map((k) => (
-                <li className="week-kind" key={k.id} style={{ "--tone": k.tone } as React.CSSProperties}>
-                  <i />
-                  <span>{k.label}</span>
-                  <b>{kindCounts[k.id]}</b>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
     </section>
   );
 }

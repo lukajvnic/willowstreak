@@ -645,6 +645,46 @@ def test_reminder_done_and_delete(client):
     assert client.delete(f"/api/reminders/{rid}").status_code == 404
 
 
+def test_reminder_edit(client):
+    register(client)
+    body = new_reminder(kind="anchor", start_date="2026-11-02", at_time="09:30", place="king st")
+    rid = client.post("/api/reminders", json=body).json()["reminder"]["id"]
+    client.patch(f"/api/reminders/{rid}", json={"done": True})
+
+    # switching kind rewrites the whole shape: the anchor's day, time and place go
+    edit = {"title": "trim", "kind": "floater", "start_date": "2026-11-03", "end_date": "2026-11-05"}
+    r = client.put(f"/api/reminders/{rid}", json=edit)
+    assert r.status_code == 200, r.text
+    got = r.json()["reminder"]
+    assert got["title"] == "trim" and got["kind"] == "floater"
+    assert got["end_date"] == "2026-11-05" and got["at_time"] is None and got["place"] == ""
+    # an edit isn't a toggle — done stays where it was
+    assert got["done"] is True
+
+    assert client.put(f"/api/reminders/{rid}", json={**edit, "end_date": None}).status_code == 422
+    assert client.put(f"/api/reminders/{rid}", json={**edit, "title": ""}).status_code == 422
+
+
+def test_reminder_duration(client):
+    register(client)
+    body = new_reminder(kind="anchor", start_date="2026-11-02", at_time="09:30")
+    r = client.post("/api/reminders", json={**body, "duration_minutes": 90})
+    assert r.status_code == 201, r.text
+    assert r.json()["reminder"]["duration_minutes"] == 90
+
+    # stretching it on the calendar is just an edit with a new length
+    rid = body["id"]
+    stretched = {k: v for k, v in body.items() if k != "id"} | {"duration_minutes": 150}
+    r = client.put(f"/api/reminders/{rid}", json=stretched)
+    assert r.status_code == 200 and r.json()["reminder"]["duration_minutes"] == 150
+
+    # a length only means something on an anchor, and has to be sane
+    floater = new_reminder(kind="floater", start_date="2026-11-02", end_date="2026-11-03")
+    assert client.post("/api/reminders", json={**floater, "duration_minutes": 30}).status_code == 422
+    assert client.put(f"/api/reminders/{rid}", json={**stretched, "duration_minutes": 0}).status_code == 422
+    assert client.put(f"/api/reminders/{rid}", json={**stretched, "duration_minutes": 2000}).status_code == 422
+
+
 def test_reminders_are_private(client, sign_in):
     register(client, "luka")
     rid = client.post("/api/reminders", json=new_reminder()).json()["reminder"]["id"]
@@ -653,6 +693,7 @@ def test_reminders_are_private(client, sign_in):
     register(other, "other")
     assert other.get("/api/reminders").json()["reminders"] == []
     assert other.patch(f"/api/reminders/{rid}", json={"done": True}).status_code == 404
+    assert other.put(f"/api/reminders/{rid}", json={"title": "x", "kind": "refile"}).status_code == 404
     assert other.delete(f"/api/reminders/{rid}").status_code == 404
 
 
