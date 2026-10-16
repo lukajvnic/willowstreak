@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { useAuth } from "./auth";
 import { formatAmount } from "./habits";
+import { peek, preload } from "./preload";
 import { stubOf, type AccountHit, type PersonStub } from "./usersApi";
 
 /** one day someone else logged */
@@ -45,17 +46,20 @@ export async function loadActivity(token: string, limit: number): Promise<Activi
 
 const POLL_MS = 30_000;
 
-/** the feed, re-read on an interval while mounted. `null` until the first
- * load lands; a failed poll keeps whatever was last shown */
+/** the feed, re-read on an interval while mounted. starts from the preloaded
+ * copy when there is one (see `pageData`), else `null` until the first load
+ * lands; a failed poll keeps whatever was last shown */
 export function useActivity(limit: number): Activity[] | null {
   const token = useAuth().session?.access_token;
-  const [items, setItems] = useState<Activity[] | null>(null);
+  const key = `activity:${limit}`;
+  const [items, setItems] = useState<Activity[] | null>(() => peek<Activity[]>(key) ?? null);
 
   useEffect(() => {
     if (!token) return;
     let stale = false;
+    // through the shared cache, so an open tab's polls keep the preload fresh too
     const pull = () =>
-      loadActivity(token, limit)
+      preload(key, () => loadActivity(token, limit))
         .then((list) => !stale && setItems(list))
         .catch((err) => {
           console.error("activity load failed", err);
@@ -67,7 +71,7 @@ export function useActivity(limit: number): Activity[] | null {
       stale = true;
       clearInterval(timer);
     };
-  }, [token, limit]);
+  }, [token, limit, key]);
 
   return items;
 }

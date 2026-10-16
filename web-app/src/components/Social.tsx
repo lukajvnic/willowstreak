@@ -4,6 +4,7 @@ import ProfileModal from "./ProfileModal";
 import SearchField from "./SearchField";
 import UserAvatar from "./UserAvatar";
 import { useActivity } from "../lib/activityApi";
+import { FEED_SIZE } from "../lib/pageData";
 import { stubOf, useAccountSearch, type PersonStub } from "../lib/usersApi";
 
 function ago(ms: number) {
@@ -16,8 +17,6 @@ function ago(ms: number) {
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
 }
-
-const FEED_SIZE = 14;
 
 export default function Social() {
   const [query, setQuery] = useState("");

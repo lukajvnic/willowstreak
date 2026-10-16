@@ -7,6 +7,7 @@ the knowledge directory is for ai agents to store context about the project
 - to-do tab (2026-10-13): the calendar is the main focus — the page is full-width (`max-width: none`) and `.todo` fills the viewport height (reminders list 340px on the left, calendar takes the rest; both scroll internally). the week view is a plain 24h hour grid: one shared `.day-axis` plus seven equal fixed-width `.col`s, each always showing its `.day-timeline` of timed anchors; it opens scrolled to ~2h before now. untimed anchors go in the all-day band with the floaters. the old hover pop-out (`.day-preview` / `.day-detail`) and the week stats strip were removed.
 - editing reminders: clicking a reminder's text (or its pencil, shown on hover) reopens `AddReminder` with `initial` set — same dialog, prefilled, "save changes" instead of filing straight away on refile/backlog. it saves through `PUT /api/reminders/{id}` (`ReminderEditRequest`), a full rewrite of the shape fields that shares create's per-kind validation via `ReminderShape`; `done` is untouched (it keeps its own `PATCH`). switching kind clears the dates/time the new kind doesn't use.
 - anchor length (2026-10-13): `reminders.duration_minutes` (migration `20261013160000_reminder_duration.sql`, nullable, 5–1440; null = drawn as the default 1h). set in the dialog's "lasts" h/m field, or by dragging the bottom strip (`.event-stretch`) of a block on the week grid — snaps to 15 min, can't pass midnight, saves on release via the same `PUT` edit. the backend leaves `duration_minutes` out of the write when it's null, and the client only sends a length for a reminder that has/had a custom one, so everything else keeps working on a database without the migration; only setting a length needs it.
+- tab preloading (2026-10-14): `src/lib/preload.ts` is a small shared cache (`preload` joins in-flight loads and reuses data <15s old; `peek`, `remember`, `invalidate`, `forget`, `forgetAll`; `usePreloaded` hook = cached copy first, fresh copy behind it). `src/lib/pageData.ts` holds the cache keys and each tab's loader. once the habits load, App warms leaderboard / to-do / social data on `requestIdleCallback`, again on nav hover/focus, and warms leaderboard + feed avatar photos via `new Image()`. Todo writes its local edits back with `remember` so returning to it doesn't flash old data; logging a habit `invalidate`s the leaderboards; sign-out calls `forgetAll`. `useActivity` polls through the same cache (key `activity:<limit>`).
 - `backend/`, `ios-app/` — early, mostly empty.
 - styling is one hand-written stylesheet, `web-app/src/index.css`. no css modules, no tailwind. class names are plain and global (`.panel`, `.heatmap`, `.cell`). colour ramps come in per-habit as css vars (`--c0`..`--c4`) set inline by `Heatmap`.
 - the habits tab is live against the backend: `src/lib/auth.tsx` (supabase-js session + profile), `src/components/AuthGate.tsx` (login/signup/pick-username), `src/lib/habitsApi.ts` (one `include=entries` fetch, create, upsert-on-log). `Heatmap` takes `entries` + `onLog` props for real data and still falls back to the seeded mock series (`buildSeries`) when they're absent — friends' grids in `ProfileModal` and the leaderboard/social tabs stay mock. habit colour ramps are client-side only (localStorage by habit id, name-hash fallback).
@@ -49,24 +50,46 @@ label can spill into the next column.
 edge today lands on (it lands on the last column most of the year). `.cell` radius is
 `calc(var(--cell) * 0.26)` so cells don't turn into circles as they shrink.
 
-clicking any past-or-today cell opens `DayPopover`, a small tooltip with that day's date and
-its amount carrying the same dashed-underline edit affordance. `Heatmap` therefore holds edits
-as `Record<dayIndex, amount>`, not a single today value — the today field and the popover both
-write into it, so a day edited either way repaints its cell and moves the stats.
+sizing (2026-10-14): the habits page is up to 1600px wide and its `.stack` is full width; each
+`Heatmap` there gets `fit`, which measures `.heatmap` with a ResizeObserver (layout effect, so
+no jump) and picks the biggest cell that fits 52 weeks plus the label column (`fitCell`,
+14–28px). the gap is `floor(cell * 0.22)` — floored so 51 gaps can't overshoot the fitted
+width. labels and text scale through `--label` / `--text` css vars (slower than the cells:
+0.6× and 0.5× of the growth); both default to 1, so profile grids (no `fit`) are unchanged.
+the activity bubbles now only show above 2180px, the width that leaves ~290px of margin a
+side next to a 1600px page.
+
+years (2026-10-14): a 52-week grid always straddles two years. `yearEdges(dates, i)` flags
+the january cells on the boundary: `left` when the cell a week earlier is december, `top` on
+jan 1 unless it's a sunday; css draws quiet 1px lines (white at 0.24) through the gaps from
+those (`::before` / `::after`), giving a stepped line between dec 31 and jan 1. the new year's
+number (`.year-tag`) hangs under the line's bottom step — a child of the cell `yearSeamEnd`
+picks (saturday of jan 1's week) — and `.heatmap[data-seam]` adds bottom padding, since its
+`overflow-x: auto` would clip it. the older year isn't labelled; it's implied. month labels
+carry no year. the hover tip's date carries the year.
+
+cells (2026-10-14): hovering any cell shows `DayPopover` in `mode="tip"` — date plus "done" /
+"not done" or "25 pushups", `pointer-events: none`. clicking a past-or-today cell of a yes/no
+habit flips it straight away (no popover); of a counted habit it opens `DayPopover` in
+`mode="edit"` with the amount field focused and selected — enter or blur saves and closes,
+escape closes without saving (unmounting doesn't fire blur). `Heatmap` holds edits as
+`Record<dayIndex, amount>`, not a single today value — the today field, the flip and the
+popover all write into it, so a day edited any way repaints its cell and moves the stats.
 
 the popover is `width: max-content` and centre-aligned, so it hugs its text. that means it
 cannot be clamped before it renders — `DayPopover` measures itself in a `useLayoutEffect`
 (pre-paint, so no flash; it renders `visibility: hidden` for the one measuring pass) and sets
 its own `left`. `Heatmap` only hands it the cell centre and the panel width. the clamp is
 needed because `.panel` is `overflow: hidden` for the shine and would otherwise crop it — the
-leftmost and rightmost columns both overflow when centred. the effect's deps include `editing`
-and `value` for a real reason: swapping the value for the input grows it ~19px, and against
-the right edge that overflows unless it re-clamps. vertically it always sits above the cell;
+leftmost and rightmost columns both overflow when centred. the effect's deps include `mode`
+and `value` for a real reason: the tip's text changes width as values change, and against the
+right edge that overflows unless it re-clamps. vertically it always sits above the cell;
 the top row has ~14px to spare, so don't add height without re-checking. future cells and
-every cell in a `readOnly` grid are `disabled`.
+every cell in a `readOnly` grid are `aria-disabled`, not `disabled` — a disabled button gets no
+pointer events, and those cells still need the hover date.
 
 cells are `<button>`s but carry `tabIndex={-1}` on purpose: 364 of them would otherwise be 364
-tab stops. the today field is the keyboard path; the popover is pointer-only.
+tab stops. the today field is the keyboard path; the cell hover/click is pointer-only.
 
 `src/lib/habits.ts` generates amounts, not just shades: `buildSeries` draws one noise value
 per day and derives both the 0..4 cell level and a plausible amount in the habit's unit from

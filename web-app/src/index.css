@@ -136,7 +136,11 @@ button { font: inherit; color: inherit; }
 /* ---------- panels ---------- */
 
 /* a full year of cells is wider than the other tabs need */
-.page[data-tab="habits"] { max-width: 1040px; }
+.page[data-tab="habits"] { max-width: 1600px; }
+
+/* on the habits page the panels take the full row and the grids scale their
+ * cells up to fill it (Heatmap's `fit`) — bigger cells and text read easier */
+.page[data-tab="habits"] .stack { width: 100%; }
 
 /* the panels are exactly as wide as the grid they hold — no dead space to the right */
 .stack {
@@ -185,15 +189,17 @@ button { font: inherit; color: inherit; }
   margin-bottom: 12px;
 }
 
+/* --text and --label are set by a `fit` Heatmap as its cells grow; both stay 1
+ * for a fixed-size grid, so profile grids are unchanged */
 .panel-title {
   margin: 0;
-  font-size: 16px;
+  font-size: calc(16px * var(--text, 1));
   font-weight: 550;
   letter-spacing: -0.01em;
 }
 
 .panel-meta {
-  font-size: 12px;
+  font-size: calc(12px * var(--text, 1));
   letter-spacing: 0.04em;
   color: var(--ink-faint);
   white-space: nowrap;
@@ -223,11 +229,11 @@ button { font: inherit; color: inherit; }
 }
 
 .day-labels span {
-  font-size: 10px;
+  font-size: calc(10px * var(--label, 1));
   line-height: var(--cell);
   color: var(--ink-faint);
   text-align: right;
-  width: 26px;
+  width: calc(26px * var(--label, 1));
   letter-spacing: 0.03em;
 }
 
@@ -243,12 +249,12 @@ button { font: inherit; color: inherit; }
   grid-auto-columns: var(--cell);
   align-items: end;
   gap: var(--gap);
-  height: 15px;
+  height: calc(15px * var(--label, 1));
 }
 
 /* a label sits over the week its month opens in and is free to spill right */
 .months span {
-  font-size: 10px;
+  font-size: calc(10px * var(--label, 1));
   letter-spacing: 0.04em;
   color: var(--ink-faint);
   line-height: 1;
@@ -274,8 +280,60 @@ button { font: inherit; color: inherit; }
   cursor: pointer;
 }
 
-.cell:disabled { cursor: default; }
+.cell[aria-disabled="true"] { cursor: default; }
+
+/* the new-year seam: a stepped line run through the gaps between dec 31 and
+ * jan 1. each january cell on the boundary draws its own piece — `left` down
+ * the gap before it, `top` across the gap above jan 1 — and the pieces overlap
+ * by half a gap so the corners join */
+.cell[data-year-left],
+.cell[data-year-top] { position: relative; }
+
+.cell[data-year-left]::before,
+.cell[data-year-top]::after {
+  content: "";
+  position: absolute;
+  /* quiet on purpose — a guide, not a border */
+  background: rgba(255, 255, 255, 0.24);
+  pointer-events: none;
+}
+
+.cell[data-year-left]::before {
+  top: calc(var(--gap) / -2);
+  bottom: calc(var(--gap) / -2);
+  left: calc(var(--gap) / -2 - 0.5px);
+  width: 1px;
+}
+
+.cell[data-year-top]::after {
+  left: calc(var(--gap) / -2 - 0.5px);
+  right: calc(var(--gap) / -2);
+  top: calc(var(--gap) / -2 - 0.5px);
+  height: 1px;
+}
+
+/* the new year, hung under the bottom of the seam line and centred on it.
+ * the older year is left implied */
+.year-tag {
+  position: absolute;
+  top: calc(100% + var(--gap) / 2 + 3px);
+  left: calc(var(--gap) / -2);
+  transform: translateX(-50%);
+  font-size: calc(10px * var(--label, 1));
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* .heatmap scrolls sideways, which clips anything below the grid — so it makes
+ * room under the bottom row for the year tag */
+.heatmap[data-seam="true"] { padding-bottom: calc(3px + 14px * var(--label, 1)); }
 .cell:focus { outline: none; }
+
+/* a loggable day lifts a little under the pointer, so it reads as clickable */
+.cell:not([aria-disabled="true"]):hover { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.55); }
 
 /* the open cell keeps a ring so you can see what the popover is about */
 .cell[data-open="true"] { box-shadow: 0 0 0 1.5px var(--c4); }
@@ -309,6 +367,17 @@ button { font: inherit; color: inherit; }
   border: 1px solid rgba(255, 255, 255, 0.13);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
 }
+
+/* the hover label: smaller, and never in the way of the pointer moving on */
+.day-pop[data-mode="tip"] {
+  z-index: 6;
+  gap: 1px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.day-pop[data-mode="tip"] .day-pop-value { font-size: 12px; }
 
 .day-pop-date {
   font-size: 11px;
@@ -379,7 +448,7 @@ form.day-pop-line {
 .habit-stat {
   display: flex;
   gap: 6px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--text, 1));
   line-height: 1.2;
 }
 
@@ -433,12 +502,12 @@ div.today .today-line {
 }
 
 .today-label {
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--text, 1));
   color: var(--ink-faint);
 }
 
 .today-value {
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--text, 1));
   font-weight: 550;
   letter-spacing: -0.005em;
 }
@@ -457,7 +526,7 @@ div.today .today-line {
   background: transparent;
   color: var(--ink);
   font: inherit;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--text, 1));
   font-weight: 550;
   outline: none;
 }
@@ -782,9 +851,10 @@ div.today .today-line {
 
 .activity-bubble-text strong { color: var(--ink); font-weight: 550; }
 
-/* under ~1250px the viewport margins are too tight to hold a bubble without
- * it landing on top of the heatmaps themselves */
-@media (max-width: 1250px) {
+/* a bubble needs ~290px of clear margin a side (inset + max-width). the habit
+ * panels now grow to fill up to 1600px, so only a viewport wider than that plus
+ * both margins has room — anything narrower would drop bubbles onto the grids */
+@media (max-width: 2180px) {
   .activity-bubbles { display: none; }
 }
 

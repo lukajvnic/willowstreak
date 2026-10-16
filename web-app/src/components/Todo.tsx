@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import AddReminder from "./AddReminder";
 import Calendar from "./Calendar";
 import { useAuth } from "../lib/auth";
@@ -26,6 +26,10 @@ import {
   loadTodos,
   setReminderDone,
 } from "../lib/todosApi";
+import { KEYS } from "../lib/pageData";
+import { forget, peek, preload, remember } from "../lib/preload";
+
+type Todos = Awaited<ReturnType<typeof loadTodos>>;
 
 const SECTION: Record<Kind, string> = {
   anchor: "anchored",
@@ -127,25 +131,41 @@ function Row({ r, category, showKind, onToggle, onEdit, onDrop }: RowProps) {
 
 export default function Todo() {
   const token = useAuth().session?.access_token;
-  // null until the first load lands
-  const [loaded, setLoaded] = useState<Reminder[] | null>(null);
+  // usually preloaded before the tab opened (see `pageData`); null only if not
+  const cached = peek<Todos>(KEYS.todos);
+  const [loaded, setLoaded] = useState<Reminder[] | null>(cached?.reminders ?? null);
   const [loadError, setLoadError] = useState("");
-  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
+  const [categories, setCategories] = useState<Category[]>([
+    ...DEFAULT_CATEGORIES,
+    ...(cached?.categories ?? []),
+  ]);
   const reminders = loaded ?? [];
   const setReminders = (change: (prev: Reminder[]) => Reminder[]) =>
     setLoaded((prev) => change(prev ?? []));
 
-  const reload = useCallback(() => {
+  const reload = (fresh: boolean) => {
     if (!token) return;
-    loadTodos(token)
+    // after a failed save the cached copy is the thing in doubt — skip it
+    if (fresh) forget(KEYS.todos);
+    preload(KEYS.todos, () => loadTodos(token))
       .then((todos) => {
         setLoaded(todos.reminders);
         setCategories([...DEFAULT_CATEGORIES, ...todos.categories]);
       })
       .catch((err) => setLoadError(String(err.message ?? err)));
-  }, [token]);
+  };
 
-  useEffect(reload, [reload]);
+  // reload is rebuilt every render; the token is what actually decides the load
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => reload(false), [token]);
+
+  // edits here are made locally first, so hand them back to the cache — coming
+  // back to the tab then shows them, not the copy from before they were made
+  useEffect(() => {
+    if (loaded === null) return;
+    const own = categories.filter((c) => !DEFAULT_CATEGORIES.some((d) => d.id === c.id));
+    remember<Todos>(KEYS.todos, { reminders: loaded, categories: own });
+  }, [loaded, categories]);
 
   // every change shows straight away and saves behind it. if a save fails, the
   // list is re-read so the tab goes back to what's actually stored
@@ -153,7 +173,7 @@ export default function Todo() {
     if (!token) return;
     write(token).catch((err) => {
       console.error("reminder save failed", err);
-      reload();
+      reload(true);
     });
   };
   const [selected, setSelected] = useState<string | null>(null);

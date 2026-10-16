@@ -9,10 +9,19 @@ type Props = {
   centerX: number;
   panelWidth: number;
   top: number;
-  onSet: (value: number) => void;
+  /** "tip" is the read-only hover label; "edit" is the amount field a click opens */
+  mode: "tip" | "edit";
+  onSet?: (value: number) => void;
+  onClose?: () => void;
 };
 
 const EDGE = 8;
+
+/** "done" / "not done" for a yes-no habit, "25 pushups" for a counted one */
+function describe(habit: Habit, value: number) {
+  if (habit.toggle) return value > 0 ? "done" : "not done";
+  return [formatAmount(value), habit.unit].filter(Boolean).join(" ");
+}
 
 export default function DayPopover({
   habit,
@@ -21,10 +30,11 @@ export default function DayPopover({
   centerX,
   panelWidth,
   top,
+  mode,
   onSet,
+  onClose,
 }: Props) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(value > 0 ? String(value) : "");
   const ref = useRef<HTMLDivElement>(null);
   const [left, setLeft] = useState<number | null>(null);
 
@@ -36,31 +46,29 @@ export default function DayPopover({
     const w = el.offsetWidth;
     const max = Math.max(EDGE, panelWidth - w - EDGE);
     setLeft(Math.min(Math.max(centerX - w / 2, EDGE), max));
-  }, [centerX, panelWidth, value, editing, habit.unit]);
+  }, [centerX, panelWidth, value, mode, habit.unit]);
 
   const commit = () => {
-    onSet(draft === "" ? 0 : Math.max(0, Math.round(Number(draft))));
-    setEditing(false);
+    onSet?.(draft === "" ? 0 : Math.max(0, Math.round(Number(draft))));
+    onClose?.();
   };
 
   return (
     <div
       className="day-pop"
+      data-mode={mode}
       ref={ref}
+      role={mode === "tip" ? "tooltip" : undefined}
       style={{ left: left ?? centerX, top, visibility: left === null ? "hidden" : undefined }}
     >
-      <span className="day-pop-date">{formatDay(date)}</span>
+      {/* with a year's worth of cells, the year matters near the january seam */}
+      <span className="day-pop-date">
+        {formatDay(date)} {date.getFullYear()}
+      </span>
 
-      {habit.toggle ? (
-        <button
-          className="day-pop-line"
-          type="button"
-          aria-pressed={value > 0}
-          onClick={() => onSet(value > 0 ? 0 : 1)}
-        >
-          <b className="day-pop-value">{value > 0 ? "done" : "not done"}</b>
-        </button>
-      ) : editing ? (
+      {mode === "tip" ? (
+        <b className="day-pop-value">{describe(habit, value)}</b>
+      ) : (
         <form
           className="day-pop-line"
           onSubmit={(e) => {
@@ -71,6 +79,7 @@ export default function DayPopover({
           <input
             className="day-pop-input"
             autoFocus
+            onFocus={(e) => e.currentTarget.select()}
             value={draft}
             placeholder="0"
             inputMode="numeric"
@@ -81,19 +90,6 @@ export default function DayPopover({
           />
           <span className="day-pop-unit">{habit.unit}</span>
         </form>
-      ) : (
-        <button
-          className="day-pop-line"
-          type="button"
-          aria-label={`edit ${habit.name} on ${formatDay(date)}`}
-          onClick={() => {
-            setDraft(value > 0 ? String(value) : "");
-            setEditing(true);
-          }}
-        >
-          <b className="day-pop-value">{formatAmount(value)}</b>
-          <span className="day-pop-unit">{habit.unit}</span>
-        </button>
       )}
     </div>
   );

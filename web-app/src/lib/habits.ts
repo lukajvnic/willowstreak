@@ -123,6 +123,28 @@ export function monthLabels(dates: Date[], weeks: number): (string | null)[] {
   });
 }
 
+/** the cell the new-year line ends on — the saturday of jan 1's week, whose
+ * left edge is the line's bottom step — or -1 when the grid has no seam */
+export function yearSeamEnd(dates: Date[]): number {
+  // jan 1 in the very first column has nothing before it to split from
+  const jan1 = dates.findIndex((d, i) => i >= 7 && d.getMonth() === 0 && d.getDate() === 1);
+  return jan1 === -1 ? -1 : Math.floor(jan1 / 7) * 7 + 6;
+}
+
+/** which sides of a cell sit on a new-year boundary: the stepped line between
+ * the last december column and the first january one */
+export function yearEdges(dates: Date[], i: number): { left: boolean; top: boolean } {
+  const d = dates[i];
+  if (d.getMonth() !== 0) return { left: false, top: false };
+  const before = dates[i - 7];
+  return {
+    // the cell a week earlier, same weekday, is still last year
+    left: before !== undefined && before.getMonth() === 11,
+    // jan 1 mid-column: the cell above it is dec 31
+    top: d.getDate() === 1 && d.getDay() !== 0,
+  };
+}
+
 /** where a logged amount lands on the habit's 0..4 colour ramp */
 export function levelFor(value: number, goal: number): number {
   if (value <= 0) return 0;

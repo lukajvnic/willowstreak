@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import UserAvatar from "./UserAvatar";
 import { useAuth } from "../lib/auth";
-import { loadBoards, type Board } from "../lib/leaderboards";
+import type { Board } from "../lib/leaderboards";
+import { KEYS, loadBoardsWarm } from "../lib/pageData";
+import { usePreloaded } from "../lib/preload";
 
 const PODIUM_ORDER = [1, 0, 2]; // silver, gold, bronze
 const SLIDE_MS = 460;
@@ -311,21 +313,12 @@ function BoardStage({ board, view }: { board: Board; view: "podium" | "list" }) 
 
 export default function Leaderboard() {
   const token = useAuth().session?.access_token;
-  const [boards, setBoards] = useState<Board[] | null>(null);
-  const [loadError, setLoadError] = useState("");
+  // usually already fetched in the background before this tab was opened
+  const { data: boards, error: loadError } = usePreloaded(token ? KEYS.leaderboards : null, () =>
+    loadBoardsWarm(token!),
+  );
 
-  useEffect(() => {
-    if (!token) return;
-    let stale = false;
-    loadBoards(token)
-      .then((list) => !stale && setBoards(list))
-      .catch((err) => !stale && setLoadError(String(err.message ?? err)));
-    return () => {
-      stale = true;
-    };
-  }, [token]);
-
-  if (boards === null) {
+  if (boards === undefined) {
     return <p className="foot">{loadError ? `couldn't load leaderboards — ${loadError}` : "loading…"}</p>;
   }
   // a board exists for each habit you track, so no habits means nothing to rank

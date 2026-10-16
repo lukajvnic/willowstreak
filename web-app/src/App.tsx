@@ -20,6 +20,8 @@ import {
   type HabitWithEntries,
 } from "./lib/habitsApi";
 import { stubOf } from "./lib/usersApi";
+import { KEYS, preloadAllTabs, preloadTab } from "./lib/pageData";
+import { forgetAll, invalidate } from "./lib/preload";
 
 const NAV = ["habits", "to-do", "leaderboard", "social"];
 
@@ -39,6 +41,7 @@ export default function App() {
   useEffect(() => {
     if (!signedIn || !token) {
       setHabits(null);
+      forgetAll();
       return;
     }
     let stale = false;
@@ -50,6 +53,21 @@ export default function App() {
     };
   }, [signedIn, token]);
 
+  // once the first tab has what it needs, fetch the other tabs' data in the
+  // background, so opening any of them paints straight away instead of waiting
+  // on its own round trip. idle time only, so it never slows the habits load
+  const habitsReady = habits !== null;
+  useEffect(() => {
+    if (!habitsReady || !token) return;
+    const warm = () => preloadAllTabs(token);
+    if ("requestIdleCallback" in window) {
+      const id = requestIdleCallback(warm, { timeout: 1500 });
+      return () => cancelIdleCallback(id);
+    }
+    const id = setTimeout(warm, 300);
+    return () => clearTimeout(id);
+  }, [habitsReady, token]);
+
   if (!ready || (session && profile === null)) return null;
   if (!signedIn || !me) return <AuthGate />;
 
@@ -57,6 +75,8 @@ export default function App() {
     if (!habitId || !token) return;
     // optimistic — the grid already repainted from Heatmap's local edits
     logEntry(token, habitId, date, value).catch((err) => console.error("entry save failed", err));
+    // a log can move you on a leaderboard — refetch it next time it's wanted
+    invalidate(KEYS.leaderboards);
   };
 
   return (
@@ -71,6 +91,9 @@ export default function App() {
                 key={item}
                 type="button"
                 data-active={item === tab}
+                // pointing at a tab is a strong hint it's next — top its data up now
+                onPointerEnter={() => token && preloadTab(item, token)}
+                onFocus={() => token && preloadTab(item, token)}
                 onClick={() => setTab(item)}
               >
                 {item}
@@ -105,6 +128,7 @@ export default function App() {
                     key={habit.id ?? habit.name}
                     habit={habit}
                     entries={entries}
+                    fit
                     onLog={(date, value) => log(habit.id, date, value)}
                   />
                 ))}

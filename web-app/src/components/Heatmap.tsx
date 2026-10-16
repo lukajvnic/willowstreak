@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import DayPopover from "./DayPopover";
 import HabitToday from "./HabitToday";
 import {
@@ -10,10 +10,42 @@ import {
   statsFor,
   todayIndex,
   WEEKS,
+  yearEdges,
+  yearSeamEnd,
   type Habit,
 } from "../lib/habits";
 
-const DAY_LABELS = ["", "mon", "", "wed", "", "fri", ""];
+const DAY_LABELS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+/** the cell size every other measure was designed around */
+const BASE_CELL = 14;
+/** past this a grid stops growing — any bigger and a year reads as blocks, not a pattern */
+const MAX_CELL = 28;
+/** the gap between cells, as a share of a cell */
+const GAP_RATIO = 0.22;
+/** the day-label column, and the space between it and the grid, at BASE_CELL */
+const LABEL_W = 26;
+const LABEL_GAP = 8;
+/** `.heatmap`'s padding, both sides — room for the today ring */
+const PAD = 6;
+
+// floored, never rounded: a gap even half a pixel over the estimate, times 51
+// gaps, would push the grid past the width it was fitted to
+const gapFor = (cell: number) => Math.max(3, Math.floor(cell * GAP_RATIO));
+/** labels and text grow with the cells, but slower — full-scale text would shout */
+const labelScale = (cell: number) => 1 + (cell / BASE_CELL - 1) * 0.6;
+const textScale = (cell: number) => 1 + (cell / BASE_CELL - 1) * 0.5;
+
+/** the biggest cell that fits `width` across `weeks` columns plus the label column */
+function fitCell(width: number, weeks: number, min: number): number {
+  let cell = min;
+  // the label column grows with the cell, so settle it in two passes
+  for (let pass = 0; pass < 2; pass++) {
+    const room = width - PAD - LABEL_GAP - LABEL_W * labelScale(cell);
+    cell = Math.floor(room / (weeks + GAP_RATIO * (weeks - 1)));
+  }
+  return Math.max(min, Math.min(MAX_CELL, cell));
+}
 
 type Props = {
   habit: Habit;
@@ -21,19 +53,48 @@ type Props = {
   entries: Record<number, number>;
   weeks?: number;
   cell?: number;
+  /** grow the cells (from `cell` up) to fill the panel's width, scaling the
+   * labels and text with them */
+  fit?: boolean;
   /** someone else's habit — stats still read, but their days aren't yours to log */
   readOnly?: boolean;
   /** fires with the cell's date whenever a day is logged or changed */
   onLog?: (date: Date, value: number) => void;
 };
 
-type Open = { index: number; centerX: number; panelWidth: number; top: number };
+/** where a cell sits, relative to the panel — what a popover is placed from */
+type Spot = { index: number; centerX: number; panelWidth: number; top: number };
 
-export default function Heatmap({ habit, entries, weeks = WEEKS, cell = 14, readOnly = false, onLog }: Props) {
+export default function Heatmap({
+  habit,
+  entries,
+  weeks = WEEKS,
+  cell: baseCell = BASE_CELL,
+  fit = false,
+  readOnly = false,
+  onLog,
+}: Props) {
   // day index -> amount, for days you've touched. everything else shows the saved value
   const [edits, setEdits] = useState<Record<number, number>>({});
-  const [open, setOpen] = useState<Open | null>(null);
+  // the amount field a click opens (counted habits only), and the hover label
+  const [open, setOpen] = useState<Spot | null>(null);
+  const [hover, setHover] = useState<Spot | null>(null);
   const panelRef = useRef<HTMLElement>(null);
+  const heatRef = useRef<HTMLDivElement>(null);
+  const [fitted, setFitted] = useState<number | null>(null);
+
+  // re-measured whenever the panel resizes, before paint so there's no jump
+  useLayoutEffect(() => {
+    const el = heatRef.current;
+    if (!fit || !el) return;
+    const measure = () => setFitted(fitCell(el.clientWidth, weeks, baseCell));
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [fit, weeks, baseCell]);
+
+  const cell = fit && fitted ? fitted : baseCell;
 
   const series = useMemo(
     () =>
@@ -45,6 +106,7 @@ export default function Heatmap({ habit, entries, weeks = WEEKS, cell = 14, read
   );
   const dates = useMemo(() => gridDates(weeks), [weeks]);
   const months = useMemo(() => monthLabels(dates, weeks), [dates, weeks]);
+  const seamEnd = useMemo(() => yearSeamEnd(dates), [dates]);
   const today = useMemo(() => todayIndex(weeks), [weeks]);
 
   const days = useMemo(() => {
@@ -77,20 +139,22 @@ export default function Heatmap({ habit, entries, weeks = WEEKS, cell = 14, read
     };
   }, [open]);
 
-  const openCell = (i: number, el: HTMLElement) => {
+  const spotOf = (i: number, el: HTMLElement): Spot | null => {
     const panel = panelRef.current;
-    if (!panel) return;
-    if (open?.index === i) return setOpen(null);
-
+    if (!panel) return null;
     const p = panel.getBoundingClientRect();
     const c = el.getBoundingClientRect();
     // the popover clamps itself once measured — it sizes to its own text
-    setOpen({
-      index: i,
-      centerX: c.left + c.width / 2 - p.left,
-      panelWidth: p.width,
-      top: c.top - p.top - 8,
-    });
+    return { index: i, centerX: c.left + c.width / 2 - p.left, panelWidth: p.width, top: c.top - p.top - 8 };
+  };
+
+  // a yes/no day just flips; a counted day opens its amount for editing
+  const clickCell = (i: number, el: HTMLElement) => {
+    if (readOnly || i > today) return;
+    if (habit.toggle) return logDay(i, days[i].amount > 0 ? 0 : 1);
+    if (open?.index === i) return setOpen(null);
+    setHover(null);
+    setOpen(spotOf(i, el));
   };
 
   const logDay = (i: number, v: number) => {
@@ -105,7 +169,9 @@ export default function Heatmap({ habit, entries, weeks = WEEKS, cell = 14, read
     "--c3": habit.ramp[3],
     "--c4": habit.ramp[4],
     "--cell": `${cell}px`,
-    "--gap": cell > 14 ? "5px" : "3px",
+    "--gap": `${gapFor(cell)}px`,
+    "--label": labelScale(cell),
+    "--text": textScale(cell),
   } as React.CSSProperties;
 
   const rows: [string, string][] = habit.toggle
@@ -127,7 +193,7 @@ export default function Heatmap({ habit, entries, weeks = WEEKS, cell = 14, read
         <span className="panel-meta">{habit.meta}</span>
       </div>
 
-      <div className="heatmap">
+      <div className="heatmap" ref={heatRef} data-seam={seamEnd !== -1}>
         <div className="day-labels">
           {DAY_LABELS.map((d, i) => (
             <span key={i}>{d}</span>
@@ -148,13 +214,25 @@ export default function Heatmap({ habit, entries, weeks = WEEKS, cell = 14, read
                 type="button"
                 // 364 cells would otherwise be 364 tab stops — the today field is the keyboard path
                 tabIndex={-1}
-                disabled={readOnly || i > today}
+                // not `disabled`: a disabled button gets no hover, and every day shows its date
+                aria-disabled={readOnly || i > today}
                 data-level={days[i].level}
                 data-today={i === today}
+                data-year-left={yearEdges(dates, i).left || undefined}
+                data-year-top={yearEdges(dates, i).top || undefined}
                 data-open={open?.index === i}
                 aria-label={`${formatDay(dates[i])}, ${formatAmount(days[i].amount)} ${habit.unit}`}
-                onClick={(e) => openCell(i, e.currentTarget)}
-              />
+                onPointerEnter={(e) => setHover(spotOf(i, e.currentTarget))}
+                onPointerLeave={() => setHover((h) => (h?.index === i ? null : h))}
+                onClick={(e) => clickCell(i, e.currentTarget)}
+              >
+                {/* the new year's label hangs off the bottom of the seam line */}
+                {i === seamEnd && (
+                  <span className="year-tag" aria-hidden>
+                    {dates[i].getFullYear()}
+                  </span>
+                )}
+              </button>
             ))}
           </div>
         </div>
@@ -181,6 +259,8 @@ export default function Heatmap({ habit, entries, weeks = WEEKS, cell = 14, read
 
       {open && (
         <DayPopover
+          key={open.index}
+          mode="edit"
           habit={habit}
           date={dates[open.index]}
           value={days[open.index].amount}
@@ -188,6 +268,20 @@ export default function Heatmap({ habit, entries, weeks = WEEKS, cell = 14, read
           panelWidth={open.panelWidth}
           top={open.top}
           onSet={(v) => logDay(open.index, v)}
+          onClose={() => setOpen(null)}
+        />
+      )}
+
+      {/* the hover label stays out of the way of a field that's open for editing */}
+      {hover && hover.index !== open?.index && (
+        <DayPopover
+          mode="tip"
+          habit={habit}
+          date={dates[hover.index]}
+          value={days[hover.index].amount}
+          centerX={hover.centerX}
+          panelWidth={hover.panelWidth}
+          top={hover.top}
         />
       )}
     </section>
