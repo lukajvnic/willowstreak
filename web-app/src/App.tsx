@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import ActivityBubbles from "./components/ActivityBubbles";
 import AuthGate from "./components/AuthGate";
+import EditHabit, { type HabitEdit } from "./components/EditHabit";
 import Heatmap from "./components/Heatmap";
 import NewHabit, { type Mode } from "./components/NewHabit";
 import NewHabitMenu from "./components/NewHabitMenu";
@@ -14,9 +15,11 @@ import { RAMPS, WEEKS, type RampName } from "./lib/habits";
 import { useAuth } from "./lib/auth";
 import {
   createHabit,
+  deleteHabit,
   loadHabits,
   logEntry,
   saveRamp,
+  updateHabit,
   type HabitWithEntries,
 } from "./lib/habitsApi";
 import { stubOf } from "./lib/usersApi";
@@ -31,6 +34,8 @@ export default function App() {
   const [habits, setHabits] = useState<HabitWithEntries[] | null>(null);
   const [loadError, setLoadError] = useState("");
   const [adding, setAdding] = useState<Mode | null>(null);
+  // id of the habit whose edit dialog is open
+  const [editing, setEditing] = useState<string | null>(null);
   const [showMe, setShowMe] = useState(false);
   const { photo, skin, worn } = useAvatarState();
 
@@ -78,6 +83,44 @@ export default function App() {
     // a log can move you on a leaderboard — refetch it next time it's wanted
     invalidate(KEYS.leaderboards);
   };
+
+  // both optimistic: the page changes now, the server catches up behind it
+  const saveEdit = (habitId: string, edit: HabitEdit) => {
+    if (!token) return;
+    saveRamp(habitId, edit.ramp);
+    const patch = (list: HabitWithEntries[] | null) =>
+      (list ?? []).map((h) =>
+        h.habit.id !== habitId
+          ? h
+          : {
+              ...h,
+              habit: {
+                ...h.habit,
+                name: edit.name,
+                goal: h.habit.toggle ? 1 : edit.goal,
+                unit: edit.unit,
+                meta: h.habit.toggle ? "yes / no" : `${edit.unit} per day`,
+                ramp: RAMPS[edit.ramp],
+              },
+            },
+      );
+    setHabits(patch);
+    const current = habits?.find((h) => h.habit.id === habitId)?.habit;
+    if (!current) return;
+    updateHabit(token, habitId, { ...edit, toggle: current.toggle })
+      .then(() => invalidate(KEYS.leaderboards))
+      .catch((err) => console.error("habit update failed", err));
+  };
+
+  const removeHabit = (habitId: string) => {
+    if (!token) return;
+    setHabits((list) => (list ?? []).filter((h) => h.habit.id !== habitId));
+    deleteHabit(token, habitId)
+      .then(() => invalidate(KEYS.leaderboards))
+      .catch((err) => console.error("habit delete failed", err));
+  };
+
+  const editingHabit = editing ? habits?.find((h) => h.habit.id === editing)?.habit : undefined;
 
   return (
     <main className="page" data-tab={tab}>
@@ -130,6 +173,7 @@ export default function App() {
                     entries={entries}
                     fit
                     onLog={(date, value) => log(habit.id, date, value)}
+                    onEdit={habit.id ? () => setEditing(habit.id!) : undefined}
                   />
                 ))}
               </div>
@@ -166,6 +210,17 @@ export default function App() {
               .catch((err) => console.error("habit create failed", err));
           }}
           onClose={() => setAdding(null)}
+        />
+      )}
+
+      {editingHabit?.id && (
+        <EditHabit
+          key={editingHabit.id}
+          habit={editingHabit}
+          taken={(habits ?? []).map((h) => h.habit.name)}
+          onSave={(edit) => saveEdit(editingHabit.id!, edit)}
+          onDelete={() => removeHabit(editingHabit.id!)}
+          onClose={() => setEditing(null)}
         />
       )}
 

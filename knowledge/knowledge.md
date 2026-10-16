@@ -3,7 +3,7 @@ the knowledge directory is for ai agents to store context about the project
 ## repo layout
 
 - `web-app/` — vite + react 19 + ts. no router; `src/App.tsx` holds a `tab` state and the nav (`habits`, `to-do`, `leaderboard`, `social`, `avatar`).
-- masthead (2026-10-13): absolutely positioned top row — `.brand` top-left (serif "willowstreak" with the tabs always visible in a row beside it), account avatar `.me` top-right. the active tab is marked with an underline, not a filled background — a `::after` bar that scales in from the left (`transform-origin: left`) and out to the right when deactivated. `.brand` wraps, so on phones the tabs drop to a second line; `.page` top padding reserves room for it. the login screen (`AuthGate`) still uses the old centred `.wordmark` "willo".
+- masthead (2026-10-13): absolutely positioned top row — `.brand` top-left (serif "willowstreak" with the tabs always visible in a row beside it, vertically centred on the wordmark via `align-items: center` — not baseline, which left them sitting low), account avatar `.me` top-right. the active tab is marked with an underline, not a filled background — a `::after` bar that scales in from the left (`transform-origin: left`) and out to the right when deactivated. `.brand` wraps, so on phones the tabs drop to a second line; `.page` top padding reserves room for it. the login screen (`AuthGate`) still uses the old centred `.wordmark` "willo".
 - to-do tab (2026-10-13): the calendar is the main focus — the page is full-width (`max-width: none`) and `.todo` fills the viewport height (reminders list 340px on the left, calendar takes the rest; both scroll internally). the week view is a plain 24h hour grid: one shared `.day-axis` plus seven equal fixed-width `.col`s, each always showing its `.day-timeline` of timed anchors; it opens scrolled to ~2h before now. untimed anchors go in the all-day band with the floaters. the old hover pop-out (`.day-preview` / `.day-detail`) and the week stats strip were removed.
 - editing reminders: clicking a reminder's text (or its pencil, shown on hover) reopens `AddReminder` with `initial` set — same dialog, prefilled, "save changes" instead of filing straight away on refile/backlog. it saves through `PUT /api/reminders/{id}` (`ReminderEditRequest`), a full rewrite of the shape fields that shares create's per-kind validation via `ReminderShape`; `done` is untouched (it keeps its own `PATCH`). switching kind clears the dates/time the new kind doesn't use.
 - anchor length (2026-10-13): `reminders.duration_minutes` (migration `20261013160000_reminder_duration.sql`, nullable, 5–1440; null = drawn as the default 1h). set in the dialog's "lasts" h/m field, or by dragging the bottom strip (`.event-stretch`) of a block on the week grid — snaps to 15 min, can't pass midnight, saves on release via the same `PUT` edit. the backend leaves `duration_minutes` out of the write when it's null, and the client only sends a length for a reminder that has/had a custom one, so everything else keeps working on a database without the migration; only setting a length needs it.
@@ -87,6 +87,21 @@ right edge that overflows unless it re-clamps. vertically it always sits above t
 the top row has ~14px to spare, so don't add height without re-checking. future cells and
 every cell in a `readOnly` grid are `aria-disabled`, not `disabled` — a disabled button gets no
 pointer events, and those cells still need the hover date.
+
+that hidden pass is also why the edit field can't use `autoFocus` (2026-10-16): it fires on
+the first render, while the popover is still hidden, and browsers won't focus a hidden
+element, so clicking a counted cell used to leave the field unfocused. `DayPopover` instead
+focuses the input in an effect once `left` has been set.
+
+editing habits (2026-10-16): a pencil (`.panel-edit`) sits next to each of your own habit
+names and shows when you hover the panel. it opens `EditHabit`, which uses the same
+`new-*` classes as the new-habit dialog: name, goal + unit for counted habits, colour, and
+"delete habit" (`.new-delete`). delete needs a second click to confirm, done in the page,
+not with `confirm()`. you can't switch a habit between yes/no and a number, because its
+entries were logged as one or the other. saves go through `PATCH /api/habits/{id}` and
+deletes through `DELETE /api/habits/{id}`, which archives the habit and keeps its entries.
+App applies both to the page right away, without waiting for the server, and refreshes the
+leaderboards afterwards. colour is still localStorage only (`saveRamp`).
 
 cells are `<button>`s but carry `tabIndex={-1}` on purpose: 364 of them would otherwise be 364
 tab stops. the today field is the keyboard path; the cell hover/click is pointer-only.

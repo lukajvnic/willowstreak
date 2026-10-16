@@ -60,6 +60,8 @@ type Props = {
   readOnly?: boolean;
   /** fires with the cell's date whenever a day is logged or changed */
   onLog?: (date: Date, value: number) => void;
+  /** shows a pencil by the name, for renaming, recolouring or deleting */
+  onEdit?: () => void;
 };
 
 /** where a cell sits, relative to the panel — what a popover is placed from */
@@ -73,6 +75,7 @@ export default function Heatmap({
   fit = false,
   readOnly = false,
   onLog,
+  onEdit,
 }: Props) {
   // day index -> amount, for days you've touched. everything else shows the saved value
   const [edits, setEdits] = useState<Record<number, number>>({});
@@ -189,7 +192,22 @@ export default function Heatmap({
   return (
     <section className="panel" style={rampVars} ref={panelRef}>
       <div className="panel-head">
-        <h2 className="panel-title">{habit.name}</h2>
+        <div className="panel-name">
+          <h2 className="panel-title">{habit.name}</h2>
+          {onEdit && !readOnly && (
+            <button className="panel-edit" type="button" onClick={onEdit} aria-label={`edit ${habit.name}`}>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden>
+                <path
+                  d="M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          )}
+        </div>
         <span className="panel-meta">{habit.meta}</span>
       </div>
 

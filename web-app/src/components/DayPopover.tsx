@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { formatAmount, formatDay, type Habit } from "../lib/habits";
 
 type Props = {
@@ -36,6 +36,7 @@ export default function DayPopover({
 }: Props) {
   const [draft, setDraft] = useState(value > 0 ? String(value) : "");
   const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [left, setLeft] = useState<number | null>(null);
 
   // the popover sizes to its text, so it can only be clamped once it has been measured.
@@ -47,6 +48,13 @@ export default function DayPopover({
     const max = Math.max(EDGE, panelWidth - w - EDGE);
     setLeft(Math.min(Math.max(centerX - w / 2, EDGE), max));
   }, [centerX, panelWidth, value, mode, habit.unit]);
+
+  // not `autoFocus`: that fires on the first render, while the popover is still
+  // `visibility: hidden` for measuring, and a browser won't focus a hidden field
+  const placed = left !== null;
+  useEffect(() => {
+    if (placed) inputRef.current?.focus();
+  }, [placed]);
 
   const commit = () => {
     onSet?.(draft === "" ? 0 : Math.max(0, Math.round(Number(draft))));
@@ -78,7 +86,7 @@ export default function DayPopover({
         >
           <input
             className="day-pop-input"
-            autoFocus
+            ref={inputRef}
             onFocus={(e) => e.currentTarget.select()}
             value={draft}
             placeholder="0"

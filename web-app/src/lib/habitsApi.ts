@@ -107,3 +107,24 @@ export async function logEntry(
   });
   if (!res.ok) throw new Error(`entry save failed (${res.status})`);
 }
+
+/** a habit's yes/no-or-count kind is fixed once made — its entries were logged
+ * in that kind's terms — so only the name and a count's goal and unit change */
+export async function updateHabit(
+  token: string,
+  habitId: string,
+  input: { name: string; toggle: boolean; goal: number; unit: string },
+): Promise<Habit> {
+  const body = input.toggle
+    ? { name: input.name }
+    : { name: input.name, goal: input.goal, unit: input.unit };
+  const res = await api(`/api/habits/${habitId}`, { method: "PATCH", token, body });
+  if (!res.ok) throw new Error(`habit update failed (${res.status})`);
+  return toUiHabit((res.data as { habit: ApiHabit }).habit);
+}
+
+/** archived server-side, not erased — it just stops coming back */
+export async function deleteHabit(token: string, habitId: string): Promise<void> {
+  const res = await api(`/api/habits/${habitId}`, { method: "DELETE", token });
+  if (!res.ok) throw new Error(`habit delete failed (${res.status})`);
+}

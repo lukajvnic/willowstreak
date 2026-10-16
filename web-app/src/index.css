@@ -73,7 +73,7 @@ button { font: inherit; color: inherit; }
 /* the tabs sit in a row just to the right of the name */
 .brand {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   flex-wrap: wrap;
   column-gap: 22px;
   row-gap: 6px;
@@ -197,6 +197,33 @@ button { font: inherit; color: inherit; }
   font-weight: 550;
   letter-spacing: -0.01em;
 }
+
+.panel-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* the way into renaming or deleting — out of sight until the panel is pointed at */
+.panel-edit {
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 3px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 130ms ease, color 130ms ease;
+}
+
+.panel-edit svg { width: calc(14px * var(--text, 1)); height: calc(14px * var(--text, 1)); }
+.panel:hover .panel-edit,
+.panel-edit:focus-visible { opacity: 1; }
+.panel-edit:hover { color: var(--ink); }
 
 .panel-meta {
   font-size: calc(12px * var(--text, 1));
@@ -779,6 +806,26 @@ div.today .today-line {
 
 .new-create:disabled { opacity: 0.3; cursor: default; }
 .new-create:not(:disabled):active { transform: translateY(1px); }
+
+/* pushed to the far end, away from save. the first click only arms it */
+.new-delete {
+  margin-left: auto;
+  flex: none;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color 130ms ease, background 130ms ease;
+}
+
+.new-delete:hover { color: #D08A72; }
+.new-delete[data-confirming="true"] {
+  color: #D08A72;
+  background: rgba(208, 138, 114, 0.12);
+}
 
 .new-warn {
   font-size: 12px;
