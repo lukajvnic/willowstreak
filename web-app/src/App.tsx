@@ -23,6 +23,7 @@ import {
   type HabitWithEntries,
 } from "./lib/habitsApi";
 import { stubOf } from "./lib/usersApi";
+import { useReminderAlerts } from "./lib/notify";
 import { KEYS, preloadAllTabs, preloadTab } from "./lib/pageData";
 import { forgetAll, invalidate } from "./lib/preload";
 
@@ -72,6 +73,9 @@ export default function App() {
     const id = setTimeout(warm, 300);
     return () => clearTimeout(id);
   }, [habitsReady, token]);
+
+  // clicking an alert brings you to the reminder it's about
+  useReminderAlerts(signedIn ? token : undefined, () => setTab("to-do"));
 
   if (!ready || (session && profile === null)) return null;
   if (!signedIn || !me) return <AuthGate />;

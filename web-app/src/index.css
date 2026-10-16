@@ -1756,6 +1756,7 @@ div.today .today-line {
 .tool svg { width: 13px; height: 13px; color: var(--ink-faint); flex: none; }
 .tool:hover { background: rgba(255, 255, 255, 0.09); color: var(--ink); }
 .tool:hover svg { color: var(--ink-soft); }
+span.tool { cursor: default; }
 
 /* the day filter is a different animal — it sits off on its own end */
 .filter-chip {
@@ -1965,6 +1966,17 @@ div.today .today-line {
   margin-right: 6px;
   font-size: 12px;
 }
+
+/* says "this one will alert you" — the title attribute says when */
+.reminder-alert {
+  display: inline-grid;
+  place-items: center;
+  margin-left: 6px;
+  vertical-align: -1px;
+  /* the gold habit ramp's brightest step — reads as "alert" on the dark rows */
+  color: #F2BF48;
+}
+.reminder-alert svg { width: 13px; height: 13px; }
 
 .reminder-edit,
 .reminder-drop {
@@ -2665,7 +2677,8 @@ body.stretching { cursor: ns-resize; user-select: none; }
   padding-left: 2px;
 }
 
-.field input {
+.field input,
+.field select {
   height: 38px;
   padding: 0 12px;
   border: 1px solid var(--line);
@@ -2678,7 +2691,17 @@ body.stretching { cursor: ns-resize; user-select: none; }
   color-scheme: dark;
 }
 
-.field input:focus { border-color: rgba(255, 255, 255, 0.22); }
+.field input:focus,
+.field select:focus { border-color: rgba(255, 255, 255, 0.22); }
+.field select { cursor: pointer; }
+
+.field-note {
+  margin: 0;
+  padding-left: 2px;
+  font-size: 11.5px;
+  color: #D08A72;
+}
+.field-note.wide { grid-column: 1 / -1; }
 
 /* an anchor's length: hours and minutes side by side */
 .length { display: flex; align-items: center; gap: 6px; }

@@ -685,6 +685,30 @@ def test_reminder_duration(client):
     assert client.put(f"/api/reminders/{rid}", json={**stretched, "duration_minutes": 2000}).status_code == 422
 
 
+def test_reminder_alert(client):
+    register(client)
+    body = new_reminder(kind="anchor", start_date="2026-11-02", at_time="09:30")
+    r = client.post("/api/reminders", json={**body, "alert_minutes": 15})
+    assert r.status_code == 201, r.text
+    assert r.json()["reminder"]["alert_minutes"] == 15
+
+    rid = body["id"]
+    edit = {k: v for k, v in body.items() if k != "id"}
+    # an edit that doesn't mention the alert leaves it alone
+    r = client.put(f"/api/reminders/{rid}", json={**edit, "title": "moved"})
+    assert r.status_code == 200 and r.json()["reminder"]["alert_minutes"] == 15
+    # an explicit null turns it off
+    r = client.put(f"/api/reminders/{rid}", json={**edit, "alert_minutes": None})
+    assert r.status_code == 200 and r.json()["reminder"]["alert_minutes"] is None
+
+    # at start is allowed; an alert only means something on an anchor, within a day
+    assert client.put(f"/api/reminders/{rid}", json={**edit, "alert_minutes": 0}).status_code == 200
+    floater = new_reminder(kind="floater", start_date="2026-11-02", end_date="2026-11-03")
+    assert client.post("/api/reminders", json={**floater, "alert_minutes": 5}).status_code == 422
+    assert client.put(f"/api/reminders/{rid}", json={**edit, "alert_minutes": -1}).status_code == 422
+    assert client.put(f"/api/reminders/{rid}", json={**edit, "alert_minutes": 2000}).status_code == 422
+
+
 def test_reminders_are_private(client, sign_in):
     register(client, "luka")
     rid = client.post("/api/reminders", json=new_reminder()).json()["reminder"]["id"]

@@ -105,10 +105,17 @@ def _shape_row(payload: ReminderShape) -> dict[str, Any]:
     client only sends one for a reminder that has (or had) a custom length, so
     the common case keeps working against a database that hasn't had the
     duration_minutes migration applied yet. A stale length left on a row that
-    stopped being an anchor is harmless: only anchors are drawn with one."""
+    stopped being an anchor is harmless: only anchors are drawn with one.
+
+    alert_minutes is written whenever the client sends it, null included —
+    a stale alert would keep firing, so turning one off has to clear it. The
+    client only sends it for a reminder that has (or had) an alert, which keeps
+    the same no-migration fallback for everything else."""
     row = payload.model_dump(mode="json")
     if row.get("duration_minutes") is None:
         row.pop("duration_minutes", None)
+    if "alert_minutes" not in payload.model_fields_set:
+        row.pop("alert_minutes", None)
     return row
 
 

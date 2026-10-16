@@ -21,6 +21,7 @@ class ReminderData(BaseModel):
     end_date: date | None = None
     at_time: time | None = None
     duration_minutes: int | None = None
+    alert_minutes: int | None = None
     place: str = ""
     category_id: str | None = None
     created_at: datetime | None = None
@@ -37,6 +38,8 @@ class ReminderShape(BaseModel):
     at_time: time | None = None
     # anchors only; null draws as the default one-hour block
     duration_minutes: int | None = Field(default=None, ge=5, le=1440)
+    # anchors only — minutes before the start to alert; null is no alert
+    alert_minutes: int | None = Field(default=None, ge=0, le=1440)
     place: str = Field(default="", max_length=120)
     category_id: str | None = Field(default=None, max_length=40)
 
@@ -46,6 +49,8 @@ class ReminderShape(BaseModel):
         than a constraint error out of Postgres."""
         if self.duration_minutes is not None and self.kind != ReminderKind.ANCHOR:
             raise ValueError("only an 'anchor' has a length")
+        if self.alert_minutes is not None and self.kind != ReminderKind.ANCHOR:
+            raise ValueError("only an 'anchor' has an alert")
         if self.kind in {ReminderKind.REFILE, ReminderKind.BACKLOG}:
             if self.start_date or self.end_date or self.at_time:
                 raise ValueError(f"a '{self.kind}' reminder carries no date or time")
