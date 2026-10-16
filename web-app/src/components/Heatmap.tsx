@@ -8,10 +8,10 @@ import {
   levelFor,
   monthLabels,
   statsFor,
+  newYearIndex,
   todayIndex,
   WEEKS,
-  yearEdges,
-  yearSeamEnd,
+  yearSeamPath,
   type Habit,
 } from "../lib/habits";
 
@@ -36,12 +36,16 @@ const gapFor = (cell: number) => Math.max(3, Math.floor(cell * GAP_RATIO));
 const labelScale = (cell: number) => 1 + (cell / BASE_CELL - 1) * 0.6;
 const textScale = (cell: number) => 1 + (cell / BASE_CELL - 1) * 0.5;
 
-/** the biggest cell that fits `width` across `weeks` columns plus the label column */
+/** the space left of the cells: the ring padding, the day labels and the gap after them */
+const leadFor = (cell: number) => PAD / 2 + LABEL_W * labelScale(cell) + LABEL_GAP;
+
+/** the biggest cell that fits `width` across `weeks` columns with the label
+ * column's width kept clear on both sides, so the cells can sit centred */
 function fitCell(width: number, weeks: number, min: number): number {
   let cell = min;
   // the label column grows with the cell, so settle it in two passes
   for (let pass = 0; pass < 2; pass++) {
-    const room = width - PAD - LABEL_GAP - LABEL_W * labelScale(cell);
+    const room = width - 2 * leadFor(cell);
     cell = Math.floor(room / (weeks + GAP_RATIO * (weeks - 1)));
   }
   return Math.max(min, Math.min(MAX_CELL, cell));
@@ -54,7 +58,8 @@ type Props = {
   weeks?: number;
   cell?: number;
   /** grow the cells (from `cell` up) to fill the panel's width, scaling the
-   * labels and text with them */
+   * labels and text with them, and centre them with the title and footer lined
+   * up to the first and last column */
   fit?: boolean;
   /** someone else's habit — stats still read, but their days aren't yours to log */
   readOnly?: boolean;
@@ -80,21 +85,21 @@ export default function Heatmap({
   const [open, setOpen] = useState<Spot | null>(null);
   const [hover, setHover] = useState<Spot | null>(null);
   const panelRef = useRef<HTMLElement>(null);
-  const heatRef = useRef<HTMLDivElement>(null);
-  const [fitted, setFitted] = useState<number | null>(null);
+  const [width, setWidth] = useState(0);
 
-  // re-measured whenever the panel resizes, before paint so there's no jump
+  // re-measured whenever the panel resizes, before paint so there's no jump.
+  // the panel and not the heatmap: the heatmap's width now follows the cells
   useLayoutEffect(() => {
-    const el = heatRef.current;
+    const el = panelRef.current;
     if (!fit || !el) return;
-    const measure = () => setFitted(fitCell(el.clientWidth, weeks, baseCell));
+    const measure = () => setWidth(el.clientWidth);
     measure();
     const watch = new ResizeObserver(measure);
     watch.observe(el);
     return () => watch.disconnect();
-  }, [fit, weeks, baseCell]);
+  }, [fit]);
 
-  const cell = fit && fitted ? fitted : baseCell;
+  const cell = fit && width ? fitCell(width, weeks, baseCell) : baseCell;
 
   const series = useMemo(
     () =>
@@ -106,7 +111,7 @@ export default function Heatmap({
   );
   const dates = useMemo(() => gridDates(weeks), [weeks]);
   const months = useMemo(() => monthLabels(dates, weeks), [dates, weeks]);
-  const seamEnd = useMemo(() => yearSeamEnd(dates), [dates]);
+  const jan1 = useMemo(() => newYearIndex(dates), [dates]);
   const today = useMemo(() => todayIndex(weeks), [weeks]);
 
   const days = useMemo(() => {
@@ -162,6 +167,18 @@ export default function Heatmap({
     onLog?.(dates[i], v);
   };
 
+  const gap = gapFor(cell);
+  const seam = jan1 === -1 ? null : yearSeamPath(jan1, weeks, cell, gap);
+
+  // centred only while the labels fit to the left — on a narrow screen the
+  // cells stay at their minimum and the heatmap scrolls instead
+  const gridWidth = weeks * cell + (weeks - 1) * gap;
+  const lead = leadFor(cell);
+  const left = Math.floor((width - gridWidth) / 2);
+  const centred = fit && width > 0 && left >= lead;
+  // nothing is drawn past today; the grid still runs to the end of the week underneath
+  const shown = today === -1 ? weeks * 7 : today + 1;
+
   const rampVars = {
     "--c0": habit.ramp[0],
     "--c1": habit.ramp[1],
@@ -169,31 +186,30 @@ export default function Heatmap({
     "--c3": habit.ramp[3],
     "--c4": habit.ramp[4],
     "--cell": `${cell}px`,
-    "--gap": `${gapFor(cell)}px`,
+    "--gap": `${gap}px`,
     "--label": labelScale(cell),
     "--text": textScale(cell),
+    ...(centred && { "--grid-w": `${gridWidth}px`, "--lead": `${lead}px`, "--left": `${left}px` }),
   } as React.CSSProperties;
 
   const rows: [string, string][] = habit.toggle
     ? [
         ["streak", `${stats.streak} days`],
         ["done", `${stats.done} days`],
-        ["rate", `${Math.round(stats.rate * 100)}%`],
       ]
     : [
         ["streak", `${stats.streak} days`],
         ["average", `${formatAmount(stats.average)} ${habit.unit}`],
-        ["std deviation", `${formatAmount(stats.deviation)} ${habit.unit}`],
       ];
 
   return (
-    <section className="panel" style={rampVars} ref={panelRef}>
+    <section className="panel" style={rampVars} ref={panelRef} data-centred={centred}>
       <div className="panel-head">
         <h2 className="panel-title">{habit.name}</h2>
         <span className="panel-meta">{habit.meta}</span>
       </div>
 
-      <div className="heatmap" ref={heatRef} data-seam={seamEnd !== -1}>
+      <div className="heatmap" data-seam={seam !== null}>
         <div className="day-labels">
           {DAY_LABELS.map((d, i) => (
             <span key={i}>{d}</span>
@@ -207,7 +223,7 @@ export default function Heatmap({
             ))}
           </div>
           <div className="grid">
-            {Array.from({ length: weeks * 7 }, (_, i) => (
+            {Array.from({ length: shown }, (_, i) => (
               <button
                 key={i}
                 className="cell"
@@ -215,25 +231,31 @@ export default function Heatmap({
                 // 364 cells would otherwise be 364 tab stops — the today field is the keyboard path
                 tabIndex={-1}
                 // not `disabled`: a disabled button gets no hover, and every day shows its date
-                aria-disabled={readOnly || i > today}
+                aria-disabled={readOnly}
                 data-level={days[i].level}
                 data-today={i === today}
-                data-year-left={yearEdges(dates, i).left || undefined}
-                data-year-top={yearEdges(dates, i).top || undefined}
                 data-open={open?.index === i}
                 aria-label={`${formatDay(dates[i])}, ${formatAmount(days[i].amount)} ${habit.unit}`}
                 onPointerEnter={(e) => setHover(spotOf(i, e.currentTarget))}
                 onPointerLeave={() => setHover((h) => (h?.index === i ? null : h))}
                 onClick={(e) => clickCell(i, e.currentTarget)}
-              >
-                {/* the new year's label hangs off the bottom of the seam line */}
-                {i === seamEnd && (
-                  <span className="year-tag" aria-hidden>
-                    {dates[i].getFullYear()}
-                  </span>
-                )}
-              </button>
+              />
             ))}
+            {seam && (
+              <>
+                <svg className="year-seam" aria-hidden>
+                  <path d={seam} />
+                </svg>
+                {/* the new year's label hangs off the bottom of the line */}
+                <span
+                  className="year-tag"
+                  aria-hidden
+                  style={{ left: Math.floor(jan1 / 7) * (cell + gap) - gap / 2, top: 7 * (cell + gap) - gap / 2 + 3 }}
+                >
+                  {dates[jan1].getFullYear()}
+                </span>
+              </>
+            )}
           </div>
         </div>
       </div>
