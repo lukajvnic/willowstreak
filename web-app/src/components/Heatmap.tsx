@@ -208,8 +208,9 @@ export default function Heatmap({
   return (
     <section className="panel" style={rampVars} ref={panelRef} data-centred={centred}>
       <div className="panel-head">
-        <div className="panel-name">
-          <h2 className="panel-title">{habit.name}</h2>
+        <h2 className="panel-title">{habit.name}</h2>
+        <div className="panel-side">
+          <span className="panel-meta">{habit.meta}</span>
           {onEdit && !readOnly && (
             <button className="panel-edit" type="button" onClick={onEdit} aria-label={`edit ${habit.name}`}>
               <svg viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -224,7 +225,6 @@ export default function Heatmap({
             </button>
           )}
         </div>
-        <span className="panel-meta">{habit.meta}</span>
       </div>
 
       <div className="heatmap" data-seam={seam !== null}>

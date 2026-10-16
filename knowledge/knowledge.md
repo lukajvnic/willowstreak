@@ -112,8 +112,9 @@ the first render, while the popover is still hidden, and browsers won't focus a 
 element, so clicking a counted cell used to leave the field unfocused. `DayPopover` instead
 focuses the input in an effect once `left` has been set.
 
-editing habits (2026-10-16): a pencil (`.panel-edit`) sits next to each of your own habit
-names and shows when you hover the panel. it opens `EditHabit`, which uses the same
+editing habits (2026-10-16): a pencil (`.panel-edit`) sits top-right of each of your own
+habits, after the meta text in `.panel-side`, always visible (Luka moved it off the name and
+dropped the hover-only fade); a -3px margin puts the icon on the last column's edge. it opens `EditHabit`, which uses the same
 `new-*` classes as the new-habit dialog: name, goal + unit for counted habits, colour, and
 "delete habit" (`.new-delete`). delete needs a second click to confirm, done in the page,
 not with `confirm()`. you can't switch a habit between yes/no and a number, because its

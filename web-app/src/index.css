@@ -242,31 +242,30 @@ button { font: inherit; color: inherit; }
   letter-spacing: -0.01em;
 }
 
-.panel-name {
+.panel-side {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
-/* the way into renaming or deleting — out of sight until the panel is pointed at */
+/* the way into renaming, recolouring or deleting, always in view. the negative
+ * margin puts the icon itself, not its hit area, on the last column's edge */
 .panel-edit {
   flex: none;
   display: grid;
   place-items: center;
+  margin-right: -3px;
   padding: 3px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--ink-faint);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 130ms ease, color 130ms ease;
+  transition: color 130ms ease;
 }
 
 .panel-edit svg { width: calc(14px * var(--text, 1)); height: calc(14px * var(--text, 1)); }
-.panel:hover .panel-edit,
-.panel-edit:focus-visible { opacity: 1; }
 .panel-edit:hover { color: var(--ink); }
 
 .panel-meta {
