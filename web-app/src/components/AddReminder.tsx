@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { alertLabel, ALERT_OPTIONS, askPermission, usePermission } from "../lib/notify";
 import {
   DEFAULT_DURATION,
   KINDS,
@@ -34,6 +35,8 @@ export default function AddReminder({ categories, initial, onAdd, onCreateCatego
   const [hours, setHours] = useState(String(Math.floor(startLength / 60)));
   const [mins, setMins] = useState(String(startLength % 60));
   const [place, setPlace] = useState(initial?.place ?? "");
+  const [alert, setAlert] = useState<number | null>(initial?.alert ?? null);
+  const permission = usePermission();
   const [creatingCat, setCreatingCat] = useState(false);
   const [newIcon, setNewIcon] = useState("");
   const [newName, setNewName] = useState("");
@@ -76,11 +79,19 @@ export default function AddReminder({ categories, initial, onAdd, onCreateCatego
       // the default hour stays unset, so it's never stored unless asked for — but
       // one that already had a length keeps sending it, so going back to 1h saves
       const duration = length !== DEFAULT_DURATION || initial?.duration !== undefined ? length : undefined;
-      onAdd({ ...base, start, time, duration, place: place.trim() || undefined });
+      onAdd({ ...base, start, time, duration, alert: alertToSave(alert), place: place.trim() || undefined });
     } else {
-      onAdd(base);
+      // only an anchor has a moment to alert at — a reminder that stops being one drops its alert
+      onAdd({ ...base, alert: alertToSave(null) });
     }
     onClose();
+  }
+
+  // null only goes out to clear an alert that was saved; "none" on a reminder
+  // that never had one stays unset, so it's never written
+  function alertToSave(value: number | null): number | null | undefined {
+    if (value !== null) return value;
+    return initial?.alert != null ? null : undefined;
   }
 
   // refile and backlog need nothing else — a new one files straight away. an edit
@@ -246,6 +257,33 @@ export default function AddReminder({ categories, initial, onAdd, onCreateCatego
                 <span>m</span>
               </span>
             </div>
+            <div className="field">
+              <label htmlFor="alert">alert</label>
+              <select
+                id="alert"
+                value={alert ?? ""}
+                onChange={(e) => {
+                  const next = e.target.value === "" ? null : Number(e.target.value);
+                  setAlert(next);
+                  // asked here, while there's a click to ask from — browsers ignore it otherwise
+                  if (next !== null) void askPermission();
+                }}
+              >
+                {ALERT_OPTIONS.map((m) => (
+                  <option key={m ?? "none"} value={m ?? ""}>
+                    {alertLabel(m)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {alert !== null && permission === "denied" && (
+              <p className="field-note wide">
+                notifications are blocked for this site — allow them in your browser's site settings
+              </p>
+            )}
+            {alert !== null && permission === "unsupported" && (
+              <p className="field-note wide">this browser can't show desktop notifications</p>
+            )}
             <div className="field wide">
               <label htmlFor="where">where</label>
               <input

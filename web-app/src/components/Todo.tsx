@@ -26,6 +26,7 @@ import {
   loadTodos,
   setReminderDone,
 } from "../lib/todosApi";
+import { alertLabel, askPermission, usePermission } from "../lib/notify";
 import { KEYS } from "../lib/pageData";
 import { forget, peek, preload, remember } from "../lib/preload";
 
@@ -59,6 +60,21 @@ function meta(r: Reminder): string | null {
     return `${dayLabel(r.start)} — ${dayLabel(r.end ?? r.start)}`;
   }
   return null;
+}
+
+function BellIcon({ off = false }: { off?: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16ZM10 20.5a2.2 2.2 0 0 0 4 0"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {off && <path d="M4 4l16 16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />}
+    </svg>
+  );
 }
 
 type RowProps = {
@@ -100,6 +116,11 @@ function Row({ r, category, showKind, onToggle, onEdit, onDrop }: RowProps) {
             </span>
           )}
           {r.title}
+          {r.kind === "anchor" && r.alert != null && (
+            <span className="reminder-alert" title={`alert ${alertLabel(r.alert)}`}>
+              <BellIcon />
+            </span>
+          )}
         </span>
         {(showKind || detail) && (
           <span className="reminder-meta">
@@ -182,6 +203,9 @@ export default function Todo() {
   const [editing, setEditing] = useState<Reminder | null>(null);
   const [split, setSplit] = useState(true);
   const [sort, setSort] = useState<SortMode>("priority");
+  const permission = usePermission();
+  // alerts set (maybe on another device) that this browser can't show yet
+  const wantsAlerts = reminders.some((r) => r.kind === "anchor" && !r.done && r.alert != null);
 
   let shown = selected ? reminders.filter((r) => covers(r, selected)) : reminders;
   if (catFilter === UNCATEGORIZED) shown = shown.filter((r) => !r.categoryId);
@@ -254,6 +278,19 @@ export default function Todo() {
             </svg>
             {sort === "priority" ? "priority" : "due date"}
           </button>
+
+          {wantsAlerts && permission === "default" && (
+            <button className="tool" type="button" onClick={() => void askPermission()}>
+              <BellIcon />
+              enable alerts
+            </button>
+          )}
+          {wantsAlerts && permission === "denied" && (
+            <span className="tool" title="allow notifications for this site in your browser's settings">
+              <BellIcon off />
+              alerts blocked
+            </span>
+          )}
 
           {selected && (
             <button className="filter-chip" type="button" onClick={() => setSelected(null)}>

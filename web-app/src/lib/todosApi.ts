@@ -12,6 +12,8 @@ type ApiReminder = {
   at_time: string | null;
   /** absent until the duration migration is applied */
   duration_minutes?: number | null;
+  /** absent until the alert migration is applied */
+  alert_minutes?: number | null;
   place: string;
   category_id: string | null;
 };
@@ -27,6 +29,7 @@ function toReminder(row: ApiReminder): Reminder {
     // postgres hands a time back with seconds; the tab works in HH:MM
     time: row.at_time?.slice(0, 5),
     duration: row.duration_minutes ?? undefined,
+    alert: row.alert_minutes ?? undefined,
     place: row.place || undefined,
     categoryId: row.category_id ?? undefined,
   };
@@ -56,6 +59,8 @@ export async function createReminder(token: string, r: Reminder): Promise<void> 
     end_date: r.end ?? null,
     at_time: r.time ?? null,
     duration_minutes: r.duration ?? null,
+    // only sent when there is one, so a database without the column still files the rest
+    ...(r.alert != null ? { alert_minutes: r.alert } : {}),
     place: r.place ?? "",
     category_id: r.categoryId ?? null,
   };
@@ -72,6 +77,8 @@ export async function editReminder(token: string, r: Reminder): Promise<void> {
     end_date: r.end ?? null,
     at_time: r.time ?? null,
     duration_minutes: r.duration ?? null,
+    // sent, null included, for one that has or had an alert — null clears it
+    ...(r.alert !== undefined ? { alert_minutes: r.alert } : {}),
     place: r.place ?? "",
     category_id: r.categoryId ?? null,
   };

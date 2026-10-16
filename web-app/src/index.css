@@ -73,7 +73,7 @@ button { font: inherit; color: inherit; }
 /* the tabs sit in a row just to the right of the name */
 .brand {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   flex-wrap: wrap;
   column-gap: 22px;
   row-gap: 6px;
@@ -241,6 +241,33 @@ button { font: inherit; color: inherit; }
   font-weight: 550;
   letter-spacing: -0.01em;
 }
+
+.panel-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* the way into renaming or deleting — out of sight until the panel is pointed at */
+.panel-edit {
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 3px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 130ms ease, color 130ms ease;
+}
+
+.panel-edit svg { width: calc(14px * var(--text, 1)); height: calc(14px * var(--text, 1)); }
+.panel:hover .panel-edit,
+.panel-edit:focus-visible { opacity: 1; }
+.panel-edit:hover { color: var(--ink); }
 
 .panel-meta {
   font-size: calc(12px * var(--text, 1));
@@ -799,6 +826,26 @@ div.today .today-line {
 
 .new-create:disabled { opacity: 0.3; cursor: default; }
 .new-create:not(:disabled):active { transform: translateY(1px); }
+
+/* pushed to the far end, away from save. the first click only arms it */
+.new-delete {
+  margin-left: auto;
+  flex: none;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color 130ms ease, background 130ms ease;
+}
+
+.new-delete:hover { color: #D08A72; }
+.new-delete[data-confirming="true"] {
+  color: #D08A72;
+  background: rgba(208, 138, 114, 0.12);
+}
 
 .new-warn {
   font-size: 12px;
@@ -1734,6 +1781,7 @@ div.today .today-line {
 .tool svg { width: 13px; height: 13px; color: var(--ink-faint); flex: none; }
 .tool:hover { background: rgba(255, 255, 255, 0.09); color: var(--ink); }
 .tool:hover svg { color: var(--ink-soft); }
+span.tool { cursor: default; }
 
 /* the day filter is a different animal — it sits off on its own end */
 .filter-chip {
@@ -1943,6 +1991,17 @@ div.today .today-line {
   margin-right: 6px;
   font-size: 12px;
 }
+
+/* says "this one will alert you" — the title attribute says when */
+.reminder-alert {
+  display: inline-grid;
+  place-items: center;
+  margin-left: 6px;
+  vertical-align: -1px;
+  /* the gold habit ramp's brightest step — reads as "alert" on the dark rows */
+  color: #F2BF48;
+}
+.reminder-alert svg { width: 13px; height: 13px; }
 
 .reminder-edit,
 .reminder-drop {
@@ -2643,7 +2702,8 @@ body.stretching { cursor: ns-resize; user-select: none; }
   padding-left: 2px;
 }
 
-.field input {
+.field input,
+.field select {
   height: 38px;
   padding: 0 12px;
   border: 1px solid var(--line);
@@ -2656,7 +2716,17 @@ body.stretching { cursor: ns-resize; user-select: none; }
   color-scheme: dark;
 }
 
-.field input:focus { border-color: rgba(255, 255, 255, 0.22); }
+.field input:focus,
+.field select:focus { border-color: rgba(255, 255, 255, 0.22); }
+.field select { cursor: pointer; }
+
+.field-note {
+  margin: 0;
+  padding-left: 2px;
+  font-size: 11.5px;
+  color: #D08A72;
+}
+.field-note.wide { grid-column: 1 / -1; }
 
 /* an anchor's length: hours and minutes side by side */
 .length { display: flex; align-items: center; gap: 6px; }

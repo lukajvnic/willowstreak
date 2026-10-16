@@ -13,6 +13,10 @@ export type Reminder = {
   time?: string;
   /** anchor only — minutes it lasts. unset draws as DEFAULT_DURATION */
   duration?: number;
+  /** anchor only — minutes before the start to send a desktop alert. null is
+   * "turned off", which an edit has to send so the server clears it; unset is
+   * "never had one" */
+  alert?: number | null;
   place?: string;
   /** free-form grouping — school, work, exercise... — orthogonal to kind */
   categoryId?: string;
