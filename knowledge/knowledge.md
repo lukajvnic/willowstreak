@@ -16,8 +16,8 @@ the knowledge directory is for ai agents to store context about the project
 ## habits page
 
 one `.panel` per habit, laid out top to bottom: title + type row, the grid, then a footer.
-the footer is one line tall: the three stats in a row on the left (`streak` / then `average` +
-`std deviation` for counted habits, or `done` + `rate` for yes/no ones) and a single-line
+the footer is one line tall: two stats in a row on the left (`streak` then `average` for
+counted habits, or `done` for yes/no ones — Luka dropped `rate` and `std deviation` 2026-10-16) and a single-line
 `HabitToday` card on the right — the only place you log a day. the whole card is the control
 (no pencil icon): it renders as a `<button>` that toggles yes/no habits or opens the editor for
 counted ones, and switches to a `<div>` only while editing, since an input can't live inside a
@@ -60,14 +60,32 @@ width. labels and text scale through `--label` / `--text` css vars (slower than 
 the activity bubbles now only show above 2180px, the width that leaves ~290px of margin a
 side next to a 1600px page.
 
-years (2026-10-14): a 52-week grid always straddles two years. `yearEdges(dates, i)` flags
-the january cells on the boundary: `left` when the cell a week earlier is december, `top` on
-jan 1 unless it's a sunday; css draws quiet 1px lines (white at 0.24) through the gaps from
-those (`::before` / `::after`), giving a stepped line between dec 31 and jan 1. the new year's
-number (`.year-tag`) hangs under the line's bottom step — a child of the cell `yearSeamEnd`
-picks (saturday of jan 1's week) — and `.heatmap[data-seam]` adds bottom padding, since its
-`overflow-x: auto` would clip it. the older year isn't labelled; it's implied. month labels
-carry no year. the hover tip's date carries the year.
+years (2026-10-14, curved 2026-10-16): a 52-week grid always straddles two years.
+`newYearIndex(dates)` finds jan 1's cell and `yearSeamPath` turns it into one svg path
+(`.year-seam`, absolutely positioned over `.grid`): down the gap after dec 31's column, across
+the gap above jan 1, down the gap before jan 1's column. Luka asked for the two bends to be
+curved — they're arcs of radius `cell * 0.26 + gap / 2`, concentric with the cells' own
+rounded corners. jan 1 on a sunday is a single straight line; jan 1 in the last column skips
+the upper run. stroke is white at 0.14 — Luka asked for it darker than the original 0.24. the new year's number (`.year-tag`) is placed by
+`Heatmap` under the line's bottom end, and `.heatmap[data-seam]` adds bottom padding, since
+its `overflow-x: auto` would clip it. the older year isn't labelled; it's implied. month
+labels carry no year. the hover tip's date carries the year.
+
+habits page has no boxes (2026-10-16): Luka asked for the grids to sit on the page background,
+modelled on a wealthsimple screenshot where the main chart has no card and only the small side
+widgets do. so `.page[data-tab="habits"] .panel` drops background, border, radius, shadow and
+the shine, and habits are split by a `var(--line)` hairline (`.panel + .panel`). the page gets
+`padding-inline: clamp(16px, 8vw, 160px)`. this is scoped to the habits tab — `.panel` keeps
+its box everywhere else (profile modal grids). the shine notes below only apply there now.
+
+centred grids (2026-10-16): `WEEKS` is now **44**, not 52 — Luka wanted fewer columns and more
+margin. a `fit` Heatmap measures the *panel* (not `.heatmap`, whose width now follows the
+cells — measuring it would loop) and `fitCell` sizes cells to leave the label column's width
+(`leadFor`) free on *both* sides. when the labels fit to the left it sets `data-centred` plus
+`--grid-w` / `--lead` / `--left`: title row, footer and the divider hairline (`::after`) are
+exactly the cells' width and start at the first column; the day labels hang into the margin.
+too narrow for that (phones), it falls back to the old full-width scrolling layout.
+future cells (after today) are no longer rendered at all — in every grid, profile ones too.
 
 cells (2026-10-14): hovering any cell shows `DayPopover` in `mode="tip"` — date plus "done" /
 "not done" or "25 pushups", `pointer-events: none`. clicking a past-or-today cell of a yes/no
@@ -94,8 +112,9 @@ the first render, while the popover is still hidden, and browsers won't focus a 
 element, so clicking a counted cell used to leave the field unfocused. `DayPopover` instead
 focuses the input in an effect once `left` has been set.
 
-editing habits (2026-10-16): a pencil (`.panel-edit`) sits next to each of your own habit
-names and shows when you hover the panel. it opens `EditHabit`, which uses the same
+editing habits (2026-10-16): a pencil (`.panel-edit`) sits top-right of each of your own
+habits, after the meta text in `.panel-side`, always visible (Luka moved it off the name and
+dropped the hover-only fade); a -3px margin puts the icon on the last column's edge. it opens `EditHabit`, which uses the same
 `new-*` classes as the new-habit dialog: name, goal + unit for counted habits, colour, and
 "delete habit" (`.new-delete`). delete needs a second click to confirm, done in the page,
 not with `confirm()`. you can't switch a habit between yes/no and a number, because its
@@ -110,9 +129,8 @@ tab stops. the today field is the keyboard path; the cell hover/click is pointer
 `src/lib/habits.ts` generates amounts, not just shades: `buildSeries` draws one noise value
 per day and derives both the 0..4 cell level and a plausible amount in the habit's unit from
 it, with the bands lined up so `levelFor(amount)` returns the level the cell is painted with.
-`statsFor` only counts days up to today — the grid runs to the end of the current week, so it
-does render a few future cells as logged. that's cosmetic, but worth knowing before trusting
-a cell near the right edge.
+`statsFor` only counts days up to today. the grid's dates still run to the end of the current
+week, but `Heatmap` stops drawing cells at today, so the last column is short.
 
 `Heatmap` is reused inside `ProfileModal` at `weeks={24} cell={14}` and with `readOnly`, which
 keeps the stats but drops the today card. it stays at 24 weeks on purpose — a year would need
@@ -123,12 +141,15 @@ keeps the stats but drops the today card. it stays at 24 weeks on purpose — a 
 two pieces, reworked twice on 2026-10-13 at Luka's request (first as in-dialog
 tabs, then as this — the tabs are gone and should not come back).
 
-`NewHabitMenu.tsx` is the `new habit` link on the habits tab plus the dropdown it
-opens: `custom`, `preset`, `join a friend`, each with an inline svg to its left
+`NewHabitMenu.tsx` is a round plus button at the *bottom* of the habits tab — the to-do
+tab's `.add-btn` reused as-is (aria-label "create new habit"), lit and rotated while open —
+(it replaced the old "last n weeks" footnote 2026-10-16, so the grids start right under
+the masthead) plus the menu it opens — upward, via `bottom:` and a `rise-in` animation,
+since it's the last thing on the page: `custom`, `preset`, `join a friend`, each with an inline svg to its left
 (pencil, four grid cells, two people — hand-drawn 24px strokes like every other
 icon here, there is no icon library). it closes on outside mousedown and escape,
-the same way `Heatmap` closes its popover. `.add-menu` is centred under the link
-by a fixed width, not a transform, because `drop-in` animates transform.
+the same way `Heatmap` closes its popover. `.add-menu` is centred over the link
+by a fixed width, not a transform, because `rise-in` animates transform.
 
 picking an option opens `NewHabit.tsx` with that `mode` as a prop (`App` holds
 `adding: Mode | null`). the dialog shows only that one pane, titled for it, with
