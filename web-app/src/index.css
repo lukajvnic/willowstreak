@@ -135,12 +135,56 @@ button { font: inherit; color: inherit; }
 
 /* ---------- panels ---------- */
 
-/* a full year of cells is wider than the other tabs need */
-.page[data-tab="habits"] { max-width: 1600px; }
+/* the grids want more width than the other tabs, with real margin either side */
+.page[data-tab="habits"] {
+  max-width: 1600px;
+  padding-inline: clamp(16px, 8vw, 160px);
+}
 
 /* on the habits page the panels take the full row and the grids scale their
  * cells up to fill it (Heatmap's `fit`) — bigger cells and text read easier */
-.page[data-tab="habits"] .stack { width: 100%; }
+.page[data-tab="habits"] .stack { width: 100%; gap: 0; }
+
+/* the grids are the page here, so they sit on the background with a hairline
+ * between them — boxes are kept for the small things (popovers, profile grids) */
+.page[data-tab="habits"] .panel {
+  padding: 30px 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.page[data-tab="habits"] .panel::before { display: none; }
+
+/* the hairline spans the cells when they're centred, the full row otherwise */
+.page[data-tab="habits"] .panel + .panel::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--left, 0px);
+  width: var(--grid-w, 100%);
+  height: 1px;
+  background: var(--line);
+}
+.page[data-tab="habits"] .stack { margin-top: 0; }
+.page[data-tab="habits"] .panel:first-child { padding-top: 0; }
+
+/* a `fit` grid centres its cells and lines the title and footer up with the
+ * first and last column; the day labels hang off to the left. Heatmap only
+ * sets this while the labels have room, and it sets the three vars with it */
+.panel[data-centred="true"] .panel-head,
+.panel[data-centred="true"] .panel-foot {
+  width: var(--grid-w);
+  margin-left: var(--left);
+}
+
+.panel[data-centred="true"] .heatmap {
+  /* labels + grid + the ring padding on the right */
+  width: calc(var(--lead) + var(--grid-w) + 3px);
+  margin-left: calc(var(--left) - var(--lead));
+}
 
 /* the panels are exactly as wide as the grid they hold — no dead space to the right */
 .stack {
@@ -198,31 +242,30 @@ button { font: inherit; color: inherit; }
   letter-spacing: -0.01em;
 }
 
-.panel-name {
+.panel-side {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
-/* the way into renaming or deleting — out of sight until the panel is pointed at */
+/* the way into renaming, recolouring or deleting, always in view. the negative
+ * margin puts the icon itself, not its hit area, on the last column's edge */
 .panel-edit {
   flex: none;
   display: grid;
   place-items: center;
+  margin-right: -3px;
   padding: 3px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--ink-faint);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 130ms ease, color 130ms ease;
+  transition: color 130ms ease;
 }
 
 .panel-edit svg { width: calc(14px * var(--text, 1)); height: calc(14px * var(--text, 1)); }
-.panel:hover .panel-edit,
-.panel-edit:focus-visible { opacity: 1; }
 .panel-edit:hover { color: var(--ink); }
 
 .panel-meta {
@@ -309,42 +352,30 @@ button { font: inherit; color: inherit; }
 
 .cell[aria-disabled="true"] { cursor: default; }
 
-/* the new-year seam: a stepped line run through the gaps between dec 31 and
- * jan 1. each january cell on the boundary draws its own piece — `left` down
- * the gap before it, `top` across the gap above jan 1 — and the pieces overlap
- * by half a gap so the corners join */
-.cell[data-year-left],
-.cell[data-year-top] { position: relative; }
+/* the new-year line, drawn by Heatmap as one svg path through the gaps
+ * between dec 31 and jan 1 (`yearSeamPath`), its bends rounded to the cells' corners */
+.grid { position: relative; }
 
-.cell[data-year-left]::before,
-.cell[data-year-top]::after {
-  content: "";
+.year-seam {
   position: absolute;
-  /* quiet on purpose — a guide, not a border */
-  background: rgba(255, 255, 255, 0.24);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
   pointer-events: none;
 }
 
-.cell[data-year-left]::before {
-  top: calc(var(--gap) / -2);
-  bottom: calc(var(--gap) / -2);
-  left: calc(var(--gap) / -2 - 0.5px);
-  width: 1px;
+.year-seam path {
+  fill: none;
+  /* quiet on purpose — a guide, not a border */
+  stroke: rgba(255, 255, 255, 0.14);
+  stroke-width: 1;
 }
 
-.cell[data-year-top]::after {
-  left: calc(var(--gap) / -2 - 0.5px);
-  right: calc(var(--gap) / -2);
-  top: calc(var(--gap) / -2 - 0.5px);
-  height: 1px;
-}
-
-/* the new year, hung under the bottom of the seam line and centred on it.
- * the older year is left implied */
+/* the new year, hung under the bottom of the line and centred on it.
+ * Heatmap places it; the older year is left implied */
 .year-tag {
   position: absolute;
-  top: calc(100% + var(--gap) / 2 + 3px);
-  left: calc(var(--gap) / -2);
   transform: translateX(-50%);
   font-size: calc(10px * var(--label, 1));
   line-height: 1;
@@ -565,35 +596,23 @@ div.today .today-line {
 /* the trigger and the menu it drops */
 .add-wrap {
   position: relative;
-  margin-top: 20px;
+  margin-top: 28px;
 }
 
-.add-habit {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--ink-faint);
-  font-size: 13px;
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 4px;
-  text-decoration-thickness: 1px;
-  text-decoration-color: rgba(255, 255, 255, 0.22);
-  transition: color 150ms ease, text-decoration-color 150ms ease;
-}
-
-.add-habit:hover,
-.add-habit[aria-expanded="true"] {
+/* the trigger is the to-do tab's `.add-btn`; it stays lit while its menu is open */
+.add-wrap .add-btn[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.09);
   color: var(--ink);
-  text-decoration-color: rgba(255, 255, 255, 0.5);
+  transform: rotate(90deg);
 }
 
-/* centred under the trigger by a fixed width, not a transform — `drop-in`
-   animates transform and would fight it */
+/* centred over the trigger by a fixed width, not a transform — `rise-in`
+   animates transform and would fight it. it opens upward: the trigger is the
+   last thing on the page */
 .add-menu {
   position: absolute;
   z-index: 10;
-  top: calc(100% + 10px);
+  bottom: calc(100% + 10px);
   left: calc(50% - 86px);
   width: 172px;
   display: flex;
@@ -604,7 +623,7 @@ div.today .today-line {
   background: var(--dune-lift);
   border: 1px solid rgba(255, 255, 255, 0.13);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
-  animation: drop-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: rise-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .add-menu button {
@@ -1517,6 +1536,11 @@ div.today .today-line {
   border-radius: 12px;
   background: var(--dune);
   animation: drop-in 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(9px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes drop-in {
@@ -2832,7 +2856,8 @@ body.stretching { cursor: ns-resize; user-select: none; }
   .reminder,
   .filter-chip,
   .add-detail { animation: none; }
-  .add-btn:hover { transform: none; }
+  .add-btn:hover,
+  .add-wrap .add-btn[aria-expanded="true"] { transform: none; }
 }
 
 

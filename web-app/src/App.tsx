@@ -11,7 +11,7 @@ import ProfileModal from "./components/ProfileModal";
 import Todo from "./components/Todo";
 import { AvatarPreview } from "./lib/avatarKit";
 import { useAvatarState } from "./lib/AvatarContext";
-import { RAMPS, WEEKS, type RampName } from "./lib/habits";
+import { RAMPS, type RampName } from "./lib/habits";
 import { useAuth } from "./lib/auth";
 import {
   createHabit,
@@ -163,8 +163,6 @@ export default function App() {
         <>
           <ActivityBubbles />
 
-          <NewHabitMenu onPick={setAdding} />
-
           {habits === null ? (
             <p className="foot">{loadError ? `couldn't load habits — ${loadError}` : "loading…"}</p>
           ) : (
@@ -181,9 +179,7 @@ export default function App() {
                   />
                 ))}
               </div>
-              <p className="foot">
-                {habits.length === 0 ? "no habits yet — add one" : `last ${WEEKS} weeks`}
-              </p>
+              <NewHabitMenu onPick={setAdding} />
             </>
           )}
         </>

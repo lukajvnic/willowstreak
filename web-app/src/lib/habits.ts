@@ -12,7 +12,8 @@ export type Habit = {
   toggle: boolean;
 };
 
-export const WEEKS = 52;
+/** how far back the habits page looks — under a year, so the grid leaves room either side */
+export const WEEKS = 44;
 
 export type RampName = "gold" | "clay" | "blue" | "moss" | "violet";
 
@@ -55,15 +56,12 @@ export type Stats = {
   /** consecutive logged days ending today */
   streak: number;
   done: number;
-  /** share of days logged, 0..1 */
-  rate: number;
-  /** mean and spread across logged days only — an unlogged day isn't a zero */
+  /** mean across logged days only — an unlogged day isn't a zero */
   average: number;
-  deviation: number;
 };
 
 export function statsFor(days: Day[], today: number): Stats {
-  // days after today are still drawn, but they can't count toward anything
+  // the grid's days after today aren't drawn and can't count toward anything
   const upTo = today >= 0 ? days.slice(0, today + 1) : days;
 
   let streak = 0;
@@ -71,12 +69,9 @@ export function statsFor(days: Day[], today: number): Stats {
 
   const logged = upTo.filter((d) => d.amount > 0);
   const done = logged.length;
-  if (done === 0) return { streak: 0, done: 0, rate: 0, average: 0, deviation: 0 };
+  if (done === 0) return { streak: 0, done: 0, average: 0 };
 
-  const average = logged.reduce((sum, d) => sum + d.amount, 0) / done;
-  const variance = logged.reduce((sum, d) => sum + (d.amount - average) ** 2, 0) / done;
-
-  return { streak, done, rate: done / upTo.length, average, deviation: Math.sqrt(variance) };
+  return { streak, done, average: logged.reduce((sum, d) => sum + d.amount, 0) / done };
 }
 
 /** enough precision to be worth reading, never more */
@@ -123,26 +118,34 @@ export function monthLabels(dates: Date[], weeks: number): (string | null)[] {
   });
 }
 
-/** the cell the new-year line ends on — the saturday of jan 1's week, whose
- * left edge is the line's bottom step — or -1 when the grid has no seam */
-export function yearSeamEnd(dates: Date[]): number {
+/** jan 1's cell — where the new-year line steps across — or -1 when the grid has no seam */
+export function newYearIndex(dates: Date[]): number {
   // jan 1 in the very first column has nothing before it to split from
-  const jan1 = dates.findIndex((d, i) => i >= 7 && d.getMonth() === 0 && d.getDate() === 1);
-  return jan1 === -1 ? -1 : Math.floor(jan1 / 7) * 7 + 6;
+  return dates.findIndex((d, i) => i >= 7 && d.getMonth() === 0 && d.getDate() === 1);
 }
 
-/** which sides of a cell sit on a new-year boundary: the stepped line between
- * the last december column and the first january one */
-export function yearEdges(dates: Date[], i: number): { left: boolean; top: boolean } {
-  const d = dates[i];
-  if (d.getMonth() !== 0) return { left: false, top: false };
-  const before = dates[i - 7];
-  return {
-    // the cell a week earlier, same weekday, is still last year
-    left: before !== undefined && before.getMonth() === 11,
-    // jan 1 mid-column: the cell above it is dec 31
-    top: d.getDate() === 1 && d.getDay() !== 0,
-  };
+/** the new-year line as an svg path, in px from the grid's top-left: down the
+ * gap after dec 31's column, across the gap above jan 1, then down the gap
+ * before jan 1's column. the two bends are rounded to match the cells' own
+ * corners, so the line hugs dec 31 and jan 1 instead of stepping */
+export function yearSeamPath(jan1: number, weeks: number, cell: number, gap: number): string {
+  const step = cell + gap;
+  const col = Math.floor(jan1 / 7);
+  const row = jan1 % 7;
+  // gap centre-lines: either side of jan 1's column, and the row edge above it
+  const left = col * step - gap / 2;
+  const right = left + step;
+  const top = -gap / 2;
+  const bottom = 7 * step - gap / 2;
+  const y = row * step - gap / 2;
+  // concentric with a cell's corner (`.cell` radius is 0.26 of a cell)
+  const r = cell * 0.26 + gap / 2;
+
+  // jan 1 on a sunday: the years split cleanly between two columns
+  if (row === 0) return `M ${left} ${top} V ${bottom}`;
+  // jan 1 in the last column: there's no column after it to run down
+  const head = col + 1 < weeks ? `M ${right} ${top} V ${y - r} A ${r} ${r} 0 0 1 ${right - r} ${y}` : `M ${right} ${y}`;
+  return `${head} H ${left + r} A ${r} ${r} 0 0 0 ${left} ${y + r} V ${bottom}`;
 }
 
 /** where a logged amount lands on the habit's 0..4 colour ramp */

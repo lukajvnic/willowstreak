@@ -65,14 +65,18 @@ export default function NewHabitMenu({ onPick }: Props) {
 
   return (
     <div className="add-wrap" ref={wrapRef}>
+      {/* the same plus as the to-do tab's add button */}
       <button
-        className="add-habit"
+        className="add-btn"
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label="create new habit"
         onClick={() => setOpen((was) => !was)}
       >
-        new habit
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden>
+          <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
       </button>
 
       {open && (
