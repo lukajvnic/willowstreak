@@ -77,6 +77,8 @@ function BellIcon({ off = false }: { off?: boolean }) {
   );
 }
 
+const COLLAPSED_KEY = "willo:reminders-collapsed";
+
 type RowProps = {
   r: Reminder;
   category: Category | undefined;
@@ -203,6 +205,22 @@ export default function Todo() {
   const [editing, setEditing] = useState<Reminder | null>(null);
   const [split, setSplit] = useState(true);
   const [sort, setSort] = useState<SortMode>("priority");
+  // folded away to give the calendar the full width — remembered per browser
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(COLLAPSED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const fold = (next: boolean) => {
+    setCollapsed(next);
+    try {
+      localStorage.setItem(COLLAPSED_KEY, next ? "1" : "0");
+    } catch {
+      // private window — it just won't be remembered
+    }
+  };
   const permission = usePermission();
   // alerts set (maybe on another device) that this browser can't show yet
   const wantsAlerts = reminders.some((r) => r.kind === "anchor" && !r.done && r.alert != null);
@@ -231,14 +249,31 @@ export default function Todo() {
   };
 
   return (
-    <div className="todo">
-      <section className="reminders">
+    <div className="todo" data-collapsed={collapsed}>
+      {/* what's left of the list once it's folded: a full-height strip that
+          names itself and shows what's waiting, so it reads as "open me" */}
+      {collapsed && (
+        <button className="reminders-rail" type="button" onClick={() => fold(false)} aria-label="show reminders">
+          <svg className="rail-chev" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="rail-label">reminders</span>
+          <span className="rail-count">{reminders.filter((r) => !r.done).length}</span>
+        </button>
+      )}
+
+      <section className="reminders" hidden={collapsed}>
         <header className="reminders-head">
           <h2 className="reminders-title">reminders</h2>
           <span className="reminders-count">{open} open</span>
           <button className="add-btn" type="button" onClick={() => setAdding(true)} aria-label="add reminder">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden>
               <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+          </button>
+          <button className="fold-btn" type="button" onClick={() => fold(true)} aria-label="hide reminders" title="hide reminders">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         </header>
