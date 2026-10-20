@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import AddReminder from "./AddReminder";
+import AddReminder, { type Preset } from "./AddReminder";
 import Calendar from "./Calendar";
 import { useAuth } from "../lib/auth";
 import {
@@ -232,6 +232,8 @@ export default function Todo() {
   const [catFilter, setCatFilter] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Reminder | null>(null);
+  // a slot drawn on the calendar, waiting in the dialog for a title
+  const [preset, setPreset] = useState<Preset | null>(null);
   const [split, setSplit] = useState(true);
   const [sort, setSort] = useState<SortMode>("priority");
   // folded away to give the calendar the full width — remembered per browser
@@ -461,14 +463,20 @@ export default function Todo() {
         selected={selected}
         onSelect={setSelected}
         onResize={(r, minutes) => edit({ ...r, duration: minutes })}
+        onCreate={(slot) => {
+          setEditing(null);
+          setPreset(slot);
+          setAdding(true);
+        }}
       />
 
       {(adding || editing) && (
         <AddReminder
           // a fresh dialog per reminder, so its fields start from that one
-          key={editing?.id ?? "new"}
+          key={editing?.id ?? (preset ? `${preset.start}@${preset.time}` : "new")}
           categories={categories}
           initial={editing ?? undefined}
+          preset={preset ?? undefined}
           onAdd={(r) => {
             if (editing) return edit(r);
             setReminders((prev) => [...prev, r]);
@@ -481,6 +489,7 @@ export default function Todo() {
           onClose={() => {
             setAdding(false);
             setEditing(null);
+            setPreset(null);
           }}
         />
       )}

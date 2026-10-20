@@ -7,14 +7,17 @@ import {
   fmtTime,
   keyOf,
   kindInfo,
+  minutesOf,
   monthGrid,
   monthName,
   occurrenceOn,
   parseKey,
   shiftKey,
+  timeOf,
   todayKey,
   type Reminder,
 } from "../lib/todos";
+import type { Preset } from "./AddReminder";
 
 type Props = {
   reminders: Reminder[];
@@ -22,6 +25,8 @@ type Props = {
   onSelect: (key: string | null) => void;
   /** an anchor's bottom edge was dragged to a new length, in minutes */
   onResize: (r: Reminder, minutes: number) => void;
+  /** an empty slot was clicked, or dragged out, on the week grid */
+  onCreate: (slot: Preset) => void;
 };
 
 type View = "week" | "month";
@@ -42,11 +47,6 @@ function hourLabel(h: number): string {
   return h < 12 ? `${h}am` : `${h - 12}pm`;
 }
 
-const minutesInto = (time: string) => {
-  const [h, m] = time.split(":").map(Number);
-  return h * 60 + m;
-};
-
 /** sunday-first week containing the given day */
 function weekOf(key: string): string[] {
   const d = parseKey(key);
@@ -62,7 +62,7 @@ function place(list: Reminder[], lengthOf: (r: Reminder) => number): { placed: P
   const placed = [...list]
     .sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""))
     .map((r) => {
-      const start = minutesInto(r.time!);
+      const start = minutesOf(r.time!);
       let lane = ends.findIndex((end) => end <= start);
       if (lane === -1) lane = ends.length;
       ends[lane] = start + lengthOf(r);
@@ -71,7 +71,7 @@ function place(list: Reminder[], lengthOf: (r: Reminder) => number): { placed: P
   return { placed, lanes: Math.max(1, ends.length) };
 }
 
-export default function Calendar({ reminders, selected, onSelect, onResize }: Props) {
+export default function Calendar({ reminders, selected, onSelect, onResize, onCreate }: Props) {
   const today = todayKey();
   const [view, setView] = useState<View>("week");
   const [cursor, setCursor] = useState(today);
@@ -124,6 +124,53 @@ export default function Calendar({ reminders, selected, onSelect, onResize }: Pr
     };
 
     document.body.classList.add("stretching");
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
+
+  // a new block being drawn on an empty stretch of a day — press, pull, let go,
+  // like google calendar. a plain click drops the default hour where it landed
+  const [sketch, setSketch] = useState<{ key: string; start: number; minutes: number } | null>(null);
+
+  const startSketch = (e: React.PointerEvent<HTMLDivElement>, key: string) => {
+    // a touch is a scroll; only a mouse or pen draws
+    if (e.button !== 0 || e.pointerType === "touch") return;
+    if ((e.target as HTMLElement).closest(".event")) return;
+    e.preventDefault();
+    const timeline = e.currentTarget;
+    // the slot under the pointer, read fresh each move in case the grid scrolled
+    const slotAt = (y: number) => {
+      const raw = ((y - timeline.getBoundingClientRect().top) / HOUR_H) * 60;
+      return Math.min(DAY_MIN - SNAP_MIN, Math.max(0, Math.floor(raw / SNAP_MIN) * SNAP_MIN));
+    };
+    const y0 = e.clientY;
+    const from = slotAt(y0);
+    let drawn = { key, start: from, minutes: Math.min(DEFAULT_DURATION, DAY_MIN - from) };
+    let dragged = false;
+
+    const move = (ev: PointerEvent) => {
+      // a few px of wobble is still a click
+      if (!dragged && Math.abs(ev.clientY - y0) < 4) return;
+      dragged = true;
+      const to = slotAt(ev.clientY);
+      // pulled upward, it grows from the slot it started on back toward the pointer
+      const top = Math.min(from, to);
+      drawn = { key, start: top, minutes: Math.max(from, to) + SNAP_MIN - top };
+      setSketch(drawn);
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      document.body.classList.remove("sketching");
+      setSketch(null);
+      if (ev.type === "pointercancel") return;
+      onCreate({ start: drawn.key, time: timeOf(drawn.start), duration: drawn.minutes });
+    };
+
+    document.body.classList.add("sketching");
+    setSketch(drawn);
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
@@ -341,7 +388,7 @@ export default function Calendar({ reminders, selected, onSelect, onResize }: Pr
 
                 return (
                   <div className="col" key={key} data-today={key === today} data-selected={key === selected}>
-                    <div className="day-timeline">
+                    <div className="day-timeline" onPointerDown={(e) => startSketch(e, key)}>
                       {HOURS.map((h) => (
                         <span className="hour-line" key={h} />
                       ))}
@@ -382,6 +429,25 @@ export default function Calendar({ reminders, selected, onSelect, onResize }: Pr
                           </button>
                         );
                       })}
+
+                      {sketch?.key === key && (
+                        <span
+                          className="event event-sketch"
+                          aria-hidden
+                          style={{
+                            "--tone": kindInfo("anchor").tone,
+                            top: `${(sketch.start / 60) * HOUR_H}px`,
+                            height: `${(sketch.minutes / 60) * HOUR_H - 2}px`,
+                            left: "2px",
+                            width: "calc(100% - 4px)",
+                          } as React.CSSProperties}
+                        >
+                          <span className="event-title">new reminder</span>
+                          <span className="event-time">
+                            {fmtTime(timeOf(sketch.start))} – {fmtTime(timeOf(sketch.start + sketch.minutes))}
+                          </span>
+                        </span>
+                      )}
 
                       {key === nowKey && <span className="now" style={{ top: `${nowOffset}px` }} />}
                     </div>

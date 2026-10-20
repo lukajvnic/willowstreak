@@ -135,6 +135,129 @@ export function fmtDay(key: string): string {
   return d.getFullYear() === new Date().getFullYear() ? short : `${short}, ${d.getFullYear()}`;
 }
 
+export const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+/** "tue, oct 21" */
+export const fmtLongDay = (key: string) => `${WEEKDAYS[parseKey(key).getDay()]}, ${fmtDay(key)}`;
+
+/** "today", "tomorrow", "in 3 days" — empty once it's more than a week off */
+export function relDay(key: string): string {
+  const days = Math.round((parseKey(key).getTime() - parseKey(todayKey()).getTime()) / 86400000);
+  if (days === 0) return "today";
+  if (days === 1) return "tomorrow";
+  if (days === -1) return "yesterday";
+  if (days > 1 && days < 7) return `in ${days} days`;
+  return "";
+}
+
+/** the first of the month `key` falls in */
+export function monthOf(key: string): string {
+  const d = parseKey(key);
+  return keyOf(new Date(d.getFullYear(), d.getMonth(), 1));
+}
+
+/** a real calendar day, or null — new Date() would roll feb 30 into march */
+function dayKey(y: number, m: number, d: number): string | null {
+  const date = new Date(y, m, d);
+  return date.getMonth() === m && date.getDate() === d ? keyOf(date) : null;
+}
+
+const monthIndex = (word: string) =>
+  word.length >= 3 ? MONTHS.findIndex((name) => name.startsWith(word)) : -1;
+
+/** a typed date — "tomorrow", "fri", "next fri", "in 3 days", "oct 22", "22 oct",
+ *  "10/22", "22", "2026-10-22" — as a day key; null when it isn't one. a date
+ *  with no year is the next one coming, never one already gone */
+export function parseDate(text: string): string | null {
+  const s = text.trim().toLowerCase().replace(/,/g, " ").replace(/\s+/g, " ");
+  const today = todayKey();
+  const now = parseKey(today);
+  const upcoming = (m: number, d: number) => {
+    const key = dayKey(now.getFullYear(), m, d);
+    return key && key < today ? dayKey(now.getFullYear() + 1, m, d) : key;
+  };
+
+  if (s === "today" || s === "tod") return today;
+  if (s === "tomorrow" || s === "tmr" || s === "tom") return shiftKey(today, 1);
+  if (s === "yesterday") return shiftKey(today, -1);
+
+  let m = s.match(/^in (\d+) ?(d|days?|w|wks?|weeks?)$/);
+  if (m) return shiftKey(today, Number(m[1]) * (m[2].startsWith("w") ? 7 : 1));
+
+  m = s.match(/^(next )?([a-z]+)$/);
+  if (m && m[2].length >= 2) {
+    const dow = WEEKDAYS.findIndex((w) => m![2].startsWith(w) || w.startsWith(m![2]));
+    if (dow >= 0) {
+      // "fri" is the coming one; "next fri" is the one in the week after
+      const ahead = (dow - now.getDay() + 7) % 7 || 7;
+      return shiftKey(today, ahead + (m[1] ? 7 : 0));
+    }
+  }
+
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return dayKey(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+
+  m = s.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2}|\d{4}))?$/);
+  if (m) {
+    if (!m[3]) return upcoming(Number(m[1]) - 1, Number(m[2]));
+    const y = Number(m[3]) < 100 ? 2000 + Number(m[3]) : Number(m[3]);
+    return dayKey(y, Number(m[1]) - 1, Number(m[2]));
+  }
+
+  // "oct 22", "october 22nd 2027", "22 oct"
+  m = s.match(/^([a-z]+)\.? (\d{1,2})(?:st|nd|rd|th)?(?: (\d{4}))?$/) ?? null;
+  let month = m ? monthIndex(m[1]) : -1;
+  let day = m ? Number(m[2]) : 0;
+  let year = m?.[3];
+  if (month < 0) {
+    m = s.match(/^(\d{1,2})(?:st|nd|rd|th)? ([a-z]+)(?: (\d{4}))?$/);
+    month = m ? monthIndex(m[2]) : -1;
+    day = m ? Number(m[1]) : 0;
+    year = m?.[3];
+  }
+  if (month >= 0) return year ? dayKey(Number(year), month, day) : upcoming(month, day);
+
+  // a bare day of the month: this month's, or next month's once it's passed
+  m = s.match(/^(\d{1,2})(?:st|nd|rd|th)?$/);
+  if (m) {
+    const d = Number(m[1]);
+    const key = dayKey(now.getFullYear(), now.getMonth(), d);
+    if (key && key >= today) return key;
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return dayKey(next.getFullYear(), next.getMonth(), d);
+  }
+  return null;
+}
+
+/** minutes since midnight, from a 24h HH:MM */
+export function minutesOf(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+/** 24h HH:MM from minutes since midnight — wraps like a clock does */
+export function timeOf(minutes: number): string {
+  const total = ((minutes % 1440) + 1440) % 1440;
+  return `${`${Math.floor(total / 60)}`.padStart(2, "0")}:${`${total % 60}`.padStart(2, "0")}`;
+}
+
+/** a typed time — "9", "9:30pm", "930", "9.30", "21:15", "noon" — as HH:MM; null when it isn't one */
+export function parseTime(text: string): string | null {
+  const s = text.trim().toLowerCase().replace(/\s+/g, "").replace(".", ":");
+  if (s === "noon") return "12:00";
+  if (s === "midnight") return "00:00";
+  const match = s.match(/^(\d{1,2})(?::?(\d{2}))?(a|am|p|pm)?$/);
+  if (!match) return null;
+  let h = Number(match[1]);
+  const m = match[2] ? Number(match[2]) : 0;
+  if (m > 59) return null;
+  if (match[3]) {
+    if (h < 1 || h > 12) return null;
+    h = (h % 12) + (match[3].startsWith("p") ? 12 : 0);
+  } else if (h > 23) return null;
+  return timeOf(h * 60 + m);
+}
+
 /** "2:30pm" from a 24h HH:MM */
 export function fmtTime(time: string): string {
   const [h, m] = time.split(":").map(Number);

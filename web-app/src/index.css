@@ -2482,6 +2482,20 @@ span.tool { cursor: default; }
 /* mid-drag the whole page keeps the resize cursor and doesn't select text */
 body.stretching { cursor: ns-resize; user-select: none; }
 
+/* an empty stretch of a day can be pressed and pulled into a new block */
+.day-timeline { cursor: cell; }
+body.sketching { cursor: ns-resize; user-select: none; }
+
+/* the block being drawn — dashed, so it reads as not saved yet */
+.event-sketch {
+  z-index: 3;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--tone) 38%, var(--black));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 70%, transparent), 0 6px 16px rgba(0, 0, 0, 0.4);
+  outline: 1px dashed color-mix(in srgb, var(--tone) 55%, transparent);
+  outline-offset: 2px;
+}
+
 /* now */
 .now {
   position: absolute;
@@ -2847,10 +2861,289 @@ body.stretching { cursor: ns-resize; user-select: none; }
 }
 .field-note.wide { grid-column: 1 / -1; }
 
-/* an anchor's length: hours and minutes side by side */
-.length { display: flex; align-items: center; gap: 6px; }
-.length input { width: 0; flex: 1; min-width: 0; padding: 0 8px; text-align: center; }
-.length span { font-size: 12px; color: var(--ink-faint); }
+/* a day: the friendly date on a face, with a small month popping out under it */
+.date-field { position: relative; display: block; }
+
+.date-face {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--dune);
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 130ms ease;
+}
+
+.date-face:hover,
+.date-face:focus-visible,
+.date-face[data-open="true"] { border-color: rgba(255, 255, 255, 0.22); outline: none; }
+
+.date-rel { font-size: 12px; color: var(--ink-faint); white-space: nowrap; }
+.date-empty { color: var(--ink-faint); }
+
+/* the month picker — notion calendar's: type a date, or point at one */
+.date-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 6;
+  width: 264px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #262423;
+  box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.85);
+  animation: drop-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.date-pop[data-align="end"] { left: auto; right: 0; }
+
+.date-pop-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--dune);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.date-pop-input:focus { border-color: rgba(255, 255, 255, 0.22); }
+.date-pop-input::placeholder { color: var(--ink-faint); }
+
+.date-pop-hint {
+  margin: 6px 2px 8px;
+  min-height: 15px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.date-pop-hint[data-bad="true"] { color: #D08A72; }
+
+.date-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 2px 4px 4px;
+}
+
+.date-pop-title { font-size: 13px; font-weight: 550; color: var(--ink); }
+.date-pop-title span { font-weight: 400; color: var(--ink-soft); }
+
+.date-pop-nav { display: flex; align-items: center; gap: 2px; }
+
+.date-pop-nav button {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.date-pop-nav button:hover { background: var(--dune-lift); color: var(--ink); }
+
+.date-pop-dow,
+.date-pop-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+
+.date-pop-dow span {
+  height: 22px;
+  line-height: 22px;
+  text-align: center;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.date-pop-grid button {
+  display: grid;
+  place-items: center;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.date-pop-grid span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  transition: background 100ms ease;
+}
+
+.date-pop-grid button:hover:not(:disabled) span { background: var(--dune-lift); }
+.date-pop-grid button[data-out="true"] { color: var(--ink-faint); }
+.date-pop-grid button[data-today="true"] span { color: #E37152; font-weight: 600; }
+.date-pop-grid button[data-pointed="true"] span { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35); }
+.date-pop-grid button[data-selected="true"] span,
+.date-pop-grid button[data-selected="true"]:hover span { background: var(--ink); color: var(--black); font-weight: 600; }
+.date-pop-grid button:disabled { opacity: 0.28; cursor: default; }
+
+/* a window's days sit on a band that runs from its first day to its last */
+.date-pop-grid button[data-in-range="true"] { background: rgba(255, 255, 255, 0.07); }
+.date-pop-grid button[data-range-start="true"] { background: linear-gradient(to right, transparent 50%, rgba(255, 255, 255, 0.07) 50%); }
+.date-pop-grid button[data-range-end="true"] { background: linear-gradient(to left, transparent 50%, rgba(255, 255, 255, 0.07) 50%); }
+
+.date-pop-clear {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.date-pop-clear:hover { color: var(--ink); }
+
+/* alert and repeat: a face like the date's, opening a menu where each choice
+   says what it means here — the time an alert goes off, the day a repeat lands on */
+.menu-field { position: relative; display: block; }
+
+.menu-chev {
+  width: 14px;
+  height: 14px;
+  margin-left: 4px;
+  vertical-align: -3px;
+  transition: transform 140ms ease;
+}
+
+.date-face[data-open="true"] .menu-chev { transform: rotate(180deg); }
+
+.menu-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 6;
+  min-width: 100%;
+  width: max-content;
+  max-width: 280px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #262423;
+  box-shadow: 0 16px 34px -10px rgba(0, 0, 0, 0.8);
+  animation: drop-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.menu-pop[data-align="end"] { left: auto; right: 0; }
+
+.menu-pop li {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 10px 7px 8px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+/* a hairline between groups: none · minutes · hours · a day */
+.menu-pop li[data-group="true"] { position: relative; margin-top: 7px; }
+.menu-pop li[data-group="true"]::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 6px;
+  right: 6px;
+  height: 1px;
+  background: var(--line);
+}
+
+.menu-pop li[data-active="true"] { background: var(--dune-lift); color: var(--ink); }
+.menu-pop li[aria-selected="true"] { color: var(--ink); }
+.menu-check { font-size: 11px; color: var(--ink); }
+.menu-label { white-space: nowrap; }
+.menu-pop .time-hint { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* one-tap days, windows and lengths, under the field they set */
+.quick { display: flex; flex-wrap: wrap; gap: 4px; margin-top: -2px; }
+.quick.wide { grid-column: 1 / -1; }
+
+.quick button {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease, border-color 130ms ease;
+}
+
+.quick button:hover:not(:disabled) { background: var(--dune); color: var(--ink); }
+.quick button[data-picked="true"] { border-color: rgba(255, 255, 255, 0.28); background: var(--dune-lift); color: var(--ink); }
+.quick button:disabled { opacity: 0.35; cursor: default; }
+
+/* start – end, each a typeable time with a quarter-hour list */
+.time-range { display: flex; align-items: center; gap: 8px; }
+.time-dash { color: var(--ink-faint); font-size: 13px; }
+
+.time-select { position: relative; flex: 1; min-width: 0; }
+.time-select input { width: 100%; font-variant-numeric: tabular-nums; }
+
+.time-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  max-height: 224px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #262423;
+  box-shadow: 0 16px 34px -10px rgba(0, 0, 0, 0.8);
+  animation: drop-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.time-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.time-list li[data-active="true"] { background: var(--dune-lift); color: var(--ink); }
+.time-list li[aria-selected="true"] { color: var(--ink); }
+.time-hint { font-size: 11.5px; color: var(--ink-faint); }
 
 .add-save {
   width: 100%;
