@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { KEYS } from "./pageData";
 import { peek, preload } from "./preload";
-import { fmtTime, parseKey, type Reminder } from "./todos";
+import { fmtTime, keyOf, occurrenceOn, parseKey, shiftKey, type Reminder } from "./todos";
 import { loadTodos } from "./todosApi";
 
 /**
@@ -59,9 +59,9 @@ export async function askPermission(): Promise<void> {
 
 /* ---------- firing ---------- */
 
-/** keyed by the moment and lead as well as the id, so moving an anchor or
- * changing its alert re-arms it */
-const seenKey = (r: Reminder) => `${r.id}@${r.start}T${r.time}-${r.alert}`;
+/** keyed by the occurrence's day, time and lead as well as the id, so moving
+ * an anchor, changing its alert, or the next repeat each arm a fresh one */
+const seenKey = (r: Reminder, day: string) => `${r.id}@${day}T${r.time}-${r.alert}`;
 
 function readSeen(): string[] {
   try {
@@ -81,23 +81,29 @@ function markSeen(key: string) {
   }
 }
 
-/** when an anchor's alert is due, or null if it has none to give */
-function dueAt(r: Reminder): number | null {
-  if (r.kind !== "anchor" || r.done || r.alert == null || !r.start || !r.time) return null;
+/** the occurrences of an anchor whose alert could be due around now, with when.
+ * an alert is at most a day early, so today and tomorrow (and yesterday, for
+ * one that went off just before midnight) are the only days that can matter */
+function dueTimes(r: Reminder): { day: string; due: number }[] {
+  if (r.kind !== "anchor" || r.done || r.alert == null || !r.start || !r.time) return [];
   const [h, m] = r.time.split(":").map(Number);
-  const d = parseKey(r.start);
-  d.setHours(h, m, 0, 0);
-  return d.getTime() - r.alert * 60_000;
+  const today = keyOf(new Date());
+  return [shiftKey(today, -1), today, shiftKey(today, 1), shiftKey(today, 2)]
+    .filter((day) => occurrenceOn(r, day)?.start === day)
+    .map((day) => {
+      const d = parseKey(day);
+      d.setHours(h, m, 0, 0);
+      return { day, due: d.getTime() - r.alert! * 60_000 };
+    });
 }
 
 function check(reminders: Reminder[], onOpen: () => void) {
   const now = Date.now();
   // re-read every tick: another open tab may have just sent one
   const seen = new Set(readSeen());
-  for (const r of reminders) {
-    const due = dueAt(r);
-    if (due === null || due > now || now - due > GRACE_MS) continue;
-    const key = seenKey(r);
+  for (const r of reminders) for (const { day, due } of dueTimes(r)) {
+    if (due > now || now - due > GRACE_MS) continue;
+    const key = seenKey(r, day);
     if (seen.has(key)) continue;
     markSeen(key);
 

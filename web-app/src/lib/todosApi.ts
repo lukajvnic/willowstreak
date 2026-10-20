@@ -1,4 +1,11 @@
-import { api } from "./api";
+import { api, type ApiCall } from "./api";
+
+/** the server's own explanation when it gave one — "the database is missing a
+ * migration: …" says far more than a bare status code */
+function failure(what: string, res: ApiCall): Error {
+  const message = (res.data as { error?: { message?: string } } | null)?.error?.message;
+  return new Error(message ? `${what}: ${message}` : `${what} (${res.status})`);
+}
 import type { Category, Reminder } from "./todos";
 
 /** rows as the backend returns them */
@@ -14,6 +21,9 @@ type ApiReminder = {
   duration_minutes?: number | null;
   /** absent until the alert migration is applied */
   alert_minutes?: number | null;
+  /** absent until the repeat migration is applied */
+  repeat?: Reminder["repeat"];
+  repeat_until?: string | null;
   place: string;
   category_id: string | null;
 };
@@ -30,6 +40,8 @@ function toReminder(row: ApiReminder): Reminder {
     time: row.at_time?.slice(0, 5),
     duration: row.duration_minutes ?? undefined,
     alert: row.alert_minutes ?? undefined,
+    repeat: row.repeat ?? undefined,
+    repeatUntil: row.repeat_until ?? undefined,
     place: row.place || undefined,
     categoryId: row.category_id ?? undefined,
   };
@@ -40,7 +52,7 @@ export async function loadTodos(
   token: string,
 ): Promise<{ reminders: Reminder[]; categories: Category[] }> {
   const res = await api("/api/reminders", { token });
-  if (!res.ok) throw new Error(`reminders load failed (${res.status})`);
+  if (!res.ok) throw failure("reminders load failed", res);
   const data = res.data as { reminders: ApiReminder[]; categories: Category[] };
   return {
     reminders: data.reminders.map(toReminder),
@@ -61,11 +73,12 @@ export async function createReminder(token: string, r: Reminder): Promise<void> 
     duration_minutes: r.duration ?? null,
     // only sent when there is one, so a database without the column still files the rest
     ...(r.alert != null ? { alert_minutes: r.alert } : {}),
+    ...(r.repeat != null ? { repeat: r.repeat, repeat_until: r.repeatUntil ?? null } : {}),
     place: r.place ?? "",
     category_id: r.categoryId ?? null,
   };
   const res = await api("/api/reminders", { method: "POST", token, body });
-  if (!res.ok) throw new Error(`reminder save failed (${res.status})`);
+  if (!res.ok) throw failure("reminder save failed", res);
 }
 
 /** rewrites everything the reminder says; `done` isn't touched */
@@ -79,24 +92,25 @@ export async function editReminder(token: string, r: Reminder): Promise<void> {
     duration_minutes: r.duration ?? null,
     // sent, null included, for one that has or had an alert — null clears it
     ...(r.alert !== undefined ? { alert_minutes: r.alert } : {}),
+    ...(r.repeat !== undefined ? { repeat: r.repeat, repeat_until: r.repeat ? (r.repeatUntil ?? null) : null } : {}),
     place: r.place ?? "",
     category_id: r.categoryId ?? null,
   };
   const res = await api(`/api/reminders/${r.id}`, { method: "PUT", token, body });
-  if (!res.ok) throw new Error(`reminder edit failed (${res.status})`);
+  if (!res.ok) throw failure("reminder edit failed", res);
 }
 
 export async function setReminderDone(token: string, id: string, done: boolean): Promise<void> {
   const res = await api(`/api/reminders/${id}`, { method: "PATCH", token, body: { done } });
-  if (!res.ok) throw new Error(`reminder update failed (${res.status})`);
+  if (!res.ok) throw failure("reminder update failed", res);
 }
 
 export async function deleteReminder(token: string, id: string): Promise<void> {
   const res = await api(`/api/reminders/${id}`, { method: "DELETE", token });
-  if (!res.ok) throw new Error(`reminder delete failed (${res.status})`);
+  if (!res.ok) throw failure("reminder delete failed", res);
 }
 
 export async function createCategory(token: string, c: Category): Promise<void> {
   const res = await api("/api/reminder-categories", { method: "POST", token, body: c });
-  if (!res.ok) throw new Error(`category save failed (${res.status})`);
+  if (!res.ok) throw failure("category save failed", res);
 }

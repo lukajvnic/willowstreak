@@ -18,6 +18,18 @@ REMINDERS_TABLE = "reminders"
 CATEGORIES_TABLE = "reminder_categories"
 POSTGRES_UNIQUE_VIOLATION = "23505"
 POSTGRES_CHECK_VIOLATION = "23514"
+# PostgREST's "no such column" — the API is ahead of the database's migrations
+POSTGREST_UNKNOWN_COLUMN = "PGRST204"
+
+
+def _schema_behind(exc: APIError) -> ApiError:
+    """A write naming a column the database doesn't have yet (e.g. a length or
+    an alert before its migration is applied) — said plainly, not as a 502."""
+    return ApiError(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        code="database_migration_missing",
+        message=f"The database is missing a migration: {exc.message}",
+    )
 
 
 def _not_found() -> ApiError:
@@ -42,6 +54,8 @@ def _insert(client: Client, table: str, row: dict[str, Any], what: str) -> dict[
                 code=f"{what}_exists",
                 message=f"That {what} already exists",
             ) from exc
+        if exc.code == POSTGREST_UNKNOWN_COLUMN:
+            raise _schema_behind(exc) from exc
         if exc.code == POSTGRES_CHECK_VIOLATION:
             raise ApiError(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -107,15 +121,18 @@ def _shape_row(payload: ReminderShape) -> dict[str, Any]:
     duration_minutes migration applied yet. A stale length left on a row that
     stopped being an anchor is harmless: only anchors are drawn with one.
 
-    alert_minutes is written whenever the client sends it, null included —
+    alert_minutes (and repeat / repeat_until) is written whenever the client sends it, null included —
     a stale alert would keep firing, so turning one off has to clear it. The
     client only sends it for a reminder that has (or had) an alert, which keeps
     the same no-migration fallback for everything else."""
     row = payload.model_dump(mode="json")
     if row.get("duration_minutes") is None:
         row.pop("duration_minutes", None)
-    if "alert_minutes" not in payload.model_fields_set:
-        row.pop("alert_minutes", None)
+    # repeat works the same way as alert_minutes: sent (null included) only for
+    # a reminder that has or had one
+    for optional in ("alert_minutes", "repeat", "repeat_until"):
+        if optional not in payload.model_fields_set:
+            row.pop(optional, None)
     return row
 
 
@@ -144,6 +161,8 @@ def _update(
             .execute()
         )
     except APIError as exc:
+        if exc.code == POSTGREST_UNKNOWN_COLUMN:
+            raise _schema_behind(exc) from exc
         if exc.code == POSTGRES_CHECK_VIOLATION:
             raise ApiError(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

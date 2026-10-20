@@ -12,6 +12,19 @@ class ReminderKind(StrEnum):
     ANCHOR = "anchor"
 
 
+class Repeat(StrEnum):
+    DAILY = "daily"
+    WEEKDAYS = "weekdays"
+    WEEKLY = "weekly"
+    BIWEEKLY = "biweekly"
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+
+
+# a floater is a window, so it can only repeat on a cycle longer than a day
+FLOATER_REPEATS = {Repeat.WEEKLY, Repeat.BIWEEKLY, Repeat.MONTHLY, Repeat.YEARLY}
+
+
 class ReminderData(BaseModel):
     id: UUID
     title: str
@@ -22,6 +35,8 @@ class ReminderData(BaseModel):
     at_time: time | None = None
     duration_minutes: int | None = None
     alert_minutes: int | None = None
+    repeat: Repeat | None = None
+    repeat_until: date | None = None
     place: str = ""
     category_id: str | None = None
     created_at: datetime | None = None
@@ -40,6 +55,10 @@ class ReminderShape(BaseModel):
     duration_minutes: int | None = Field(default=None, ge=5, le=1440)
     # anchors only — minutes before the start to alert; null is no alert
     alert_minutes: int | None = Field(default=None, ge=0, le=1440)
+    # anchors and floaters; the row is the current occurrence. null = one-off
+    repeat: Repeat | None = None
+    # the last day it can fall on; null repeats forever
+    repeat_until: date | None = None
     place: str = Field(default="", max_length=120)
     category_id: str | None = Field(default=None, max_length=40)
 
@@ -51,6 +70,15 @@ class ReminderShape(BaseModel):
             raise ValueError("only an 'anchor' has a length")
         if self.alert_minutes is not None and self.kind != ReminderKind.ANCHOR:
             raise ValueError("only an 'anchor' has an alert")
+        if self.repeat_until is not None and self.repeat is None:
+            raise ValueError("an end date needs a repeat")
+        if self.repeat is not None:
+            if self.kind not in {ReminderKind.ANCHOR, ReminderKind.FLOATER}:
+                raise ValueError("only a dated reminder can repeat")
+            if self.kind == ReminderKind.FLOATER and self.repeat not in FLOATER_REPEATS:
+                raise ValueError(f"a 'floater' can't repeat {self.repeat}")
+            if self.repeat_until and self.start_date and self.repeat_until < self.start_date:
+                raise ValueError("a repeat can't end before it starts")
         if self.kind in {ReminderKind.REFILE, ReminderKind.BACKLOG}:
             if self.start_date or self.end_date or self.at_time:
                 raise ValueError(f"a '{self.kind}' reminder carries no date or time")

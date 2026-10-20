@@ -10,6 +10,8 @@ import {
   fmtTime,
   kindInfo,
   kindOrder,
+  nextOccurrence,
+  repeatLabel,
   shiftKey,
   sortReminders,
   todayKey,
@@ -54,12 +56,27 @@ function dayLabel(key: string): string {
 function meta(r: Reminder): string | null {
   if (r.kind === "anchor" && r.start) {
     const at = r.time && (r.duration ? `${fmtTime(r.time)} for ${fmtDuration(r.duration)}` : fmtTime(r.time));
-    return [dayLabel(r.start), at, r.place].filter(Boolean).join(" · ");
+    return [dayLabel(r.start), at, r.place, r.repeat && repeatLabel(r.repeat)].filter(Boolean).join(" · ");
   }
   if (r.kind === "floater" && r.start) {
-    return `${dayLabel(r.start)} — ${dayLabel(r.end ?? r.start)}`;
+    const span = `${dayLabel(r.start)} — ${dayLabel(r.end ?? r.start)}`;
+    return r.repeat ? `${span} · ${repeatLabel(r.repeat)}` : span;
   }
   return null;
+}
+
+function RepeatIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M4 11V9a3 3 0 0 1 3-3h12m-3-3 3 3-3 3M20 13v2a3 3 0 0 1-3 3H5m3 3-3-3 3-3"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 function BellIcon({ off = false }: { off?: boolean }) {
@@ -118,6 +135,11 @@ function Row({ r, category, showKind, onToggle, onEdit, onDrop }: RowProps) {
             </span>
           )}
           {r.title}
+          {r.repeat && (
+            <span className="reminder-repeat" title={`repeats ${repeatLabel(r.repeat)}`}>
+              <RepeatIcon />
+            </span>
+          )}
           {r.kind === "anchor" && r.alert != null && (
             <span className="reminder-alert" title={`alert ${alertLabel(r.alert)}`}>
               <BellIcon />
@@ -158,6 +180,9 @@ export default function Todo() {
   const cached = peek<Todos>(KEYS.todos);
   const [loaded, setLoaded] = useState<Reminder[] | null>(cached?.reminders ?? null);
   const [loadError, setLoadError] = useState("");
+  // the last save that didn't go through, said out loud — otherwise the reload
+  // below just makes the reminder vanish with no hint why
+  const [saveError, setSaveError] = useState("");
   const [categories, setCategories] = useState<Category[]>([
     ...DEFAULT_CATEGORIES,
     ...(cached?.categories ?? []),
@@ -194,10 +219,14 @@ export default function Todo() {
   // list is re-read so the tab goes back to what's actually stored
   const save = (write: (token: string) => Promise<void>) => {
     if (!token) return;
-    write(token).catch((err) => {
-      console.error("reminder save failed", err);
-      reload(true);
-    });
+    write(token).then(
+      () => setSaveError(""),
+      (err) => {
+        console.error("reminder save failed", err);
+        setSaveError(String(err?.message ?? err));
+        reload(true);
+      },
+    );
   };
   const [selected, setSelected] = useState<string | null>(null);
   const [catFilter, setCatFilter] = useState<string | null>(null);
@@ -233,7 +262,13 @@ export default function Todo() {
   const catOf = (r: Reminder) => categories.find((c) => c.id === r.categoryId);
 
   const toggle = (id: string) => {
-    const done = !reminders.find((r) => r.id === id)?.done;
+    // like Apple's: ticking off a repeating one moves it on to its next date
+    // instead of finishing it — until the repeat runs out
+    const current = reminders.find((r) => r.id === id);
+    const next = current && !current.done ? nextOccurrence(current) : null;
+    if (current && next) return edit({ ...current, start: next.start, end: next.end ?? current.end });
+
+    const done = !current?.done;
     setReminders((prev) => prev.map((r) => (r.id === id ? { ...r, done } : r)));
     save((t) => setReminderDone(t, id, done));
   };
@@ -366,6 +401,15 @@ export default function Todo() {
             uncategorized
           </button>
         </div>
+
+        {saveError && (
+          <div className="save-error" role="alert">
+            <span>couldn't save — {saveError}</span>
+            <button type="button" onClick={() => setSaveError("")} aria-label="dismiss">
+              ×
+            </button>
+          </div>
+        )}
 
         <div className="reminder-scroll">
           {loaded === null ? (

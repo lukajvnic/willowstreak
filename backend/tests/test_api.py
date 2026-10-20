@@ -709,6 +709,34 @@ def test_reminder_alert(client):
     assert client.put(f"/api/reminders/{rid}", json={**edit, "alert_minutes": 2000}).status_code == 422
 
 
+def test_reminder_repeat(client):
+    register(client)
+    body = new_reminder(kind="anchor", start_date="2026-11-02", at_time="09:30")
+    r = client.post("/api/reminders", json={**body, "repeat": "weekly", "repeat_until": "2026-12-31"})
+    assert r.status_code == 201, r.text
+    got = r.json()["reminder"]
+    assert got["repeat"] == "weekly" and got["repeat_until"] == "2026-12-31"
+
+    rid = body["id"]
+    edit = {k: v for k, v in body.items() if k != "id"}
+    # rolling forward to the next occurrence is an edit that doesn't mention the rule
+    r = client.put(f"/api/reminders/{rid}", json={**edit, "start_date": "2026-11-09"})
+    assert r.status_code == 200 and r.json()["reminder"]["repeat"] == "weekly"
+    # an explicit null stops it repeating
+    r = client.put(f"/api/reminders/{rid}", json={**edit, "repeat": None, "repeat_until": None})
+    assert r.status_code == 200 and r.json()["reminder"]["repeat"] is None
+
+    floater = new_reminder(kind="floater", start_date="2026-11-02", end_date="2026-11-04")
+    assert client.post("/api/reminders", json={**floater, "repeat": "monthly"}).status_code == 201
+    # a window can't repeat daily, an undated pile can't repeat at all
+    assert client.post("/api/reminders", json={**new_reminder(kind="floater", start_date="2026-11-02", end_date="2026-11-04"), "repeat": "daily"}).status_code == 422
+    assert client.post("/api/reminders", json={**new_reminder(), "repeat": "weekly"}).status_code == 422
+    # an end needs a rule, and can't come before the start
+    assert client.put(f"/api/reminders/{rid}", json={**edit, "repeat_until": "2026-12-01"}).status_code == 422
+    assert client.put(f"/api/reminders/{rid}", json={**edit, "repeat": "daily", "repeat_until": "2026-10-01"}).status_code == 422
+    assert client.put(f"/api/reminders/{rid}", json={**edit, "repeat": "hourly"}).status_code == 422
+
+
 def test_reminders_are_private(client, sign_in):
     register(client, "luka")
     rid = client.post("/api/reminders", json=new_reminder()).json()["reminder"]["id"]

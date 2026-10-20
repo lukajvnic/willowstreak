@@ -7,11 +7,13 @@ import {
   LABEL_TAG,
   MAX_DURATION,
   MIN_DURATION,
+  repeatsFor,
   shiftKey,
   todayKey,
   type Category,
   type Kind,
   type Reminder,
+  type Repeat,
 } from "../lib/todos";
 
 type Props = {
@@ -36,6 +38,9 @@ export default function AddReminder({ categories, initial, onAdd, onCreateCatego
   const [mins, setMins] = useState(String(startLength % 60));
   const [place, setPlace] = useState(initial?.place ?? "");
   const [alert, setAlert] = useState<number | null>(initial?.alert ?? null);
+  const [repeat, setRepeat] = useState<Repeat | null>(initial?.repeat ?? null);
+  // empty = repeats forever
+  const [until, setUntil] = useState(initial?.repeatUntil ?? "");
   const permission = usePermission();
   const [creatingCat, setCreatingCat] = useState(false);
   const [newIcon, setNewIcon] = useState("");
@@ -70,7 +75,7 @@ export default function AddReminder({ categories, initial, onAdd, onCreateCatego
     };
     if (k === "floater") {
       const [a, b] = start <= end ? [start, end] : [end, start];
-      onAdd({ ...base, start: a, end: b });
+      onAdd({ ...base, start: a, end: b, ...repeatToSave(k, a) });
     } else if (k === "anchor") {
       const length = Math.min(
         MAX_DURATION,
@@ -79,10 +84,19 @@ export default function AddReminder({ categories, initial, onAdd, onCreateCatego
       // the default hour stays unset, so it's never stored unless asked for — but
       // one that already had a length keeps sending it, so going back to 1h saves
       const duration = length !== DEFAULT_DURATION || initial?.duration !== undefined ? length : undefined;
-      onAdd({ ...base, start, time, duration, alert: alertToSave(alert), place: place.trim() || undefined });
+      onAdd({
+        ...base,
+        start,
+        time,
+        duration,
+        alert: alertToSave(alert),
+        ...repeatToSave(k, start),
+        place: place.trim() || undefined,
+      });
     } else {
-      // only an anchor has a moment to alert at — a reminder that stops being one drops its alert
-      onAdd({ ...base, alert: alertToSave(null) });
+      // only an anchor has a moment to alert at, and an undated pile has nothing
+      // to repeat — a reminder that stops being dated drops both
+      onAdd({ ...base, alert: alertToSave(null), ...repeatToSave(k, "") });
     }
     onClose();
   }
@@ -93,6 +107,52 @@ export default function AddReminder({ categories, initial, onAdd, onCreateCatego
     if (value !== null) return value;
     return initial?.alert != null ? null : undefined;
   }
+
+  // same rule as the alert: null only goes out to clear a saved repeat. a rule
+  // the kind can't use (daily on a window) is dropped, and so is an end before the start
+  function repeatToSave(k: Kind, from: string): Pick<Reminder, "repeat" | "repeatUntil"> {
+    const rule = repeat && repeatsFor(k).some((x) => x.id === repeat) ? repeat : null;
+    if (rule) return { repeat: rule, repeatUntil: until && until >= from ? until : null };
+    return initial?.repeat != null ? { repeat: null, repeatUntil: null } : {};
+  }
+
+  // the repeat row, shared by both dated kinds
+  const repeatFields = (k: Kind) => {
+    const options = repeatsFor(k);
+    const value = repeat && options.some((x) => x.id === repeat) ? repeat : "";
+    return (
+      <>
+        <div className="field">
+          <label htmlFor="repeat">repeat</label>
+          <select
+            id="repeat"
+            value={value}
+            onChange={(e) => setRepeat((e.target.value || null) as Repeat | null)}
+          >
+            <option value="">never</option>
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        {value && (
+          <div className="field">
+            <label htmlFor="until">end repeat</label>
+            <input
+              id="until"
+              type="date"
+              value={until}
+              min={start}
+              onChange={(e) => setUntil(e.target.value)}
+              aria-label="end repeat — leave empty to repeat forever"
+            />
+          </div>
+        )}
+      </>
+    );
+  };
 
   // refile and backlog need nothing else — a new one files straight away. an edit
   // always waits for save, since the title or category may still be changing
@@ -219,6 +279,7 @@ export default function AddReminder({ categories, initial, onAdd, onCreateCatego
               <label htmlFor="to">to</label>
               <input id="to" type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
             </div>
+            {repeatFields("floater")}
           </div>
         )}
 
@@ -284,6 +345,7 @@ export default function AddReminder({ categories, initial, onAdd, onCreateCatego
             {alert !== null && permission === "unsupported" && (
               <p className="field-note wide">this browser can't show desktop notifications</p>
             )}
+            {repeatFields("anchor")}
             <div className="field wide">
               <label htmlFor="where">where</label>
               <input

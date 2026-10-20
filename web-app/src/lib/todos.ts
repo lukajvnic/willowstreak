@@ -1,5 +1,7 @@
 export type Kind = "refile" | "backlog" | "floater" | "anchor";
 
+export type Repeat = "daily" | "weekdays" | "weekly" | "biweekly" | "monthly" | "yearly";
+
 export type Reminder = {
   id: string;
   title: string;
@@ -17,6 +19,11 @@ export type Reminder = {
    * "turned off", which an edit has to send so the server clears it; unset is
    * "never had one" */
   alert?: number | null;
+  /** anchors and floaters. the row is the current occurrence; the calendar draws
+   * the later ones and ticking it off rolls it forward. null / unset as `alert` */
+  repeat?: Repeat | null;
+  /** the last day an occurrence can start on; unset repeats forever */
+  repeatUntil?: string | null;
   place?: string;
   /** free-form grouping — school, work, exercise... — orthogonal to kind */
   categoryId?: string;
@@ -192,12 +199,120 @@ export function monthGrid(year: number, month: number): string[] {
   });
 }
 
+/* ---------- repeats ---------- */
+
+export const REPEATS: { id: Repeat; label: string; anchorOnly?: boolean }[] = [
+  { id: "daily", label: "every day", anchorOnly: true },
+  { id: "weekdays", label: "weekdays", anchorOnly: true },
+  { id: "weekly", label: "every week" },
+  { id: "biweekly", label: "every 2 weeks" },
+  { id: "monthly", label: "every month" },
+  { id: "yearly", label: "every year" },
+];
+
+export const repeatLabel = (r: Repeat) => REPEATS.find((x) => x.id === r)!.label;
+
+/** the rules a kind can use — a floater is a window, so nothing shorter than a week */
+export const repeatsFor = (kind: Kind) =>
+  kind === "anchor" ? REPEATS : kind === "floater" ? REPEATS.filter((x) => !x.anchorOnly) : [];
+
+const DAY_MS = 86_400_000;
+
+/** whole days from a to b — through UTC noon, so a daylight-saving shift can't round it off */
+function daysBetween(a: string, b: string): number {
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  return Math.round((Date.UTC(by, bm - 1, bd, 12) - Date.UTC(ay, am - 1, ad, 12)) / DAY_MS);
+}
+
+/** `key` moved on by `n` months, clamped to the month's end — jan 31 + 1 is feb 28 */
+function addMonths(key: string, n: number): string {
+  const d = parseKey(key);
+  const day = d.getDate();
+  const target = new Date(d.getFullYear(), d.getMonth() + n, 1);
+  const last = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(day, last));
+  return keyOf(target);
+}
+
+const isWeekday = (key: string) => {
+  const dow = parseKey(key).getDay();
+  return dow !== 0 && dow !== 6;
+};
+
+/** the start of the n-th occurrence after `start`. weekdays isn't a fixed step — see below */
+function nthStart(start: string, rule: Exclude<Repeat, "weekdays">, n: number): string {
+  switch (rule) {
+    case "daily":
+      return shiftKey(start, n);
+    case "weekly":
+      return shiftKey(start, 7 * n);
+    case "biweekly":
+      return shiftKey(start, 14 * n);
+    case "monthly":
+      return addMonths(start, n);
+    case "yearly":
+      return addMonths(start, 12 * n);
+  }
+}
+
+/** the occurrence of `r` that covers `key` — its own start and end — or null.
+ * a one-off has just the one occurrence, itself */
+export function occurrenceOn(r: Reminder, key: string): { start: string; end: string } | null {
+  if (!r.start) return null;
+  const length = r.end ? daysBetween(r.start, r.end) : 0;
+
+  if (!r.repeat) {
+    return key >= r.start && key <= (r.end ?? r.start) ? { start: r.start, end: r.end ?? r.start } : null;
+  }
+  if (key < r.start) return null;
+
+  let start: string;
+  if (r.repeat === "weekdays") {
+    if (!isWeekday(key)) return null;
+    start = key;
+  } else {
+    // the last occurrence starting on or before `key`
+    const span = { daily: 1, weekly: 7, biweekly: 14 } as Record<string, number>;
+    let n: number;
+    if (r.repeat in span) {
+      n = Math.floor(daysBetween(r.start, key) / span[r.repeat]);
+    } else {
+      const a = parseKey(r.start);
+      const b = parseKey(key);
+      n = (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth();
+      if (r.repeat === "yearly") n = Math.floor(n / 12);
+      if (nthStart(r.start, r.repeat, n) > key) n--;
+    }
+    start = nthStart(r.start, r.repeat, n);
+  }
+
+  if (r.repeatUntil && start > r.repeatUntil) return null;
+  const end = shiftKey(start, length);
+  return key <= end ? { start, end } : null;
+}
+
+/** where a repeating reminder goes once this occurrence is ticked off — the
+ * next start and end, or null when the repeat has run out */
+export function nextOccurrence(r: Reminder): { start: string; end?: string } | null {
+  if (!r.repeat || !r.start) return null;
+  let start: string;
+  if (r.repeat === "weekdays") {
+    start = shiftKey(r.start, 1);
+    while (!isWeekday(start)) start = shiftKey(start, 1);
+  } else {
+    start = nthStart(r.start, r.repeat, 1);
+  }
+  if (r.repeatUntil && start > r.repeatUntil) return null;
+  return { start, end: r.end ? shiftKey(start, daysBetween(r.start, r.end)) : undefined };
+}
+
 /* ---------- queries ---------- */
 
-/** does this reminder touch the given day? backlog and refile never do */
+/** does this reminder touch the given day? backlog and refile never do. a
+ * repeating one touches every day one of its occurrences does */
 export function covers(r: Reminder, key: string): boolean {
-  if (!r.start) return false;
-  return key >= r.start && key <= (r.end ?? r.start);
+  return occurrenceOn(r, key) !== null;
 }
 
 export const dated = (r: Reminder) => r.kind === "anchor" || r.kind === "floater";

@@ -1917,6 +1917,36 @@ span.tool { cursor: default; }
   border-radius: 999px;
 }
 
+/* a save the server turned down — stays until dismissed or the next save works */
+.save-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 9px 10px 9px 12px;
+  border-radius: 10px;
+  background: rgba(208, 138, 114, 0.12);
+  border: 1px solid rgba(208, 138, 114, 0.3);
+  color: #E3A48D;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.save-error span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+.save-error button {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.save-error button:hover { opacity: 1; }
+
 .reminders-empty {
   margin: 26px 0 0;
   padding: 0 4px;
@@ -2066,6 +2096,15 @@ span.tool { cursor: default; }
   color: #F2BF48;
 }
 .reminder-alert svg { width: 13px; height: 13px; }
+
+.reminder-repeat {
+  display: inline-grid;
+  place-items: center;
+  margin-left: 6px;
+  vertical-align: -1px;
+  color: var(--ink-soft);
+}
+.reminder-repeat svg { width: 13px; height: 13px; }
 
 .reminder-edit,
 .reminder-drop {

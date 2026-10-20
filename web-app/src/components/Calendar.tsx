@@ -9,6 +9,7 @@ import {
   kindInfo,
   monthGrid,
   monthName,
+  occurrenceOn,
   parseKey,
   shiftKey,
   todayKey,
@@ -151,6 +152,22 @@ export default function Calendar({ reminders, selected, onSelect, onResize }: Pr
       (r.kind === "floater" || (r.kind === "anchor" && !r.time)) && days.some((k) => covers(r, k)),
   );
 
+  // one chip per occurrence on screen — a repeating reminder can land in the
+  // band several times a week, and each one is its own bar. every occurrence of
+  // a reminder shares its row; they never overlap
+  type Chip = { r: Reminder; row: number; occ: { start: string; end: string }; from: number; to: number };
+  const bandChips = banded.flatMap((r, row) => {
+    const runs = new Map<string, Chip>();
+    days.forEach((k, i) => {
+      const occ = occurrenceOn(r, k);
+      if (!occ) return;
+      const run = runs.get(occ.start);
+      if (run) run.to = i;
+      else runs.set(occ.start, { r, row, occ, from: i, to: i });
+    });
+    return [...runs.values()];
+  });
+
   const nowKey = keyOf(now);
   const nowOffset = ((now.getHours() * 60 + now.getMinutes()) / 60) * HOUR_H;
 
@@ -218,23 +235,27 @@ export default function Calendar({ reminders, selected, onSelect, onResize }: Pr
                     <span className="day-num">{d.getDate()}</span>
 
                     <span className="day-marks">
-                      {floaters.map((r) => (
-                        <span
-                          key={r.id}
-                          className="bar"
-                          data-span={
-                            key === r.start && key === (r.end ?? r.start)
-                              ? "solo"
-                              : key === r.start
-                                ? "start"
-                                : key === (r.end ?? r.start)
-                                  ? "end"
-                                  : "mid"
-                          }
-                          data-done={r.done}
-                          style={{ "--tone": kindInfo(r.kind).tone } as React.CSSProperties}
-                        />
-                      ))}
+                      {floaters.map((r) => {
+                        // a repeating window's ends are this occurrence's, not the row's
+                        const occ = occurrenceOn(r, key)!;
+                        return (
+                          <span
+                            key={r.id}
+                            className="bar"
+                            data-span={
+                              key === occ.start && key === occ.end
+                                ? "solo"
+                                : key === occ.start
+                                  ? "start"
+                                  : key === occ.end
+                                    ? "end"
+                                    : "mid"
+                            }
+                            data-done={r.done}
+                            style={{ "--tone": kindInfo(r.kind).tone } as React.CSSProperties}
+                          />
+                        );
+                      })}
 
                       {anchors.slice(0, 2).map((r) => (
                         <span
@@ -282,18 +303,15 @@ export default function Calendar({ reminders, selected, onSelect, onResize }: Pr
               <span className="gutter-cell">all-day</span>
               <div className="band-lanes">
                 {banded.length === 0 && <span className="band-empty" />}
-                {banded.map((r, row) => {
-                  const hit = days.map((k, i) => (covers(r, k) ? i : -1)).filter((i) => i >= 0);
-                  const from = hit[0];
-                  const to = hit[hit.length - 1];
+                {bandChips.map(({ r, row, occ, from, to }) => {
                   return (
                     <button
-                      key={r.id}
+                      key={`${r.id}@${occ.start}`}
                       type="button"
                       className="band-chip"
                       data-done={r.done}
-                      data-open-left={r.start! < days[0]}
-                      data-open-right={(r.end ?? r.start)! > days[days.length - 1]}
+                      data-open-left={occ.start < days[0]}
+                      data-open-right={occ.end > days[days.length - 1]}
                       style={{
                         "--tone": kindInfo(r.kind).tone,
                         gridColumn: `${from + 1} / ${to + 2}`,
@@ -318,7 +336,7 @@ export default function Calendar({ reminders, selected, onSelect, onResize }: Pr
               </div>
 
               {days.map((key) => {
-                const timed = reminders.filter((r) => r.kind === "anchor" && r.start === key && r.time);
+                const timed = reminders.filter((r) => r.kind === "anchor" && r.time && occurrenceOn(r, key));
                 const { placed, lanes } = place(timed, lengthOf);
 
                 return (
