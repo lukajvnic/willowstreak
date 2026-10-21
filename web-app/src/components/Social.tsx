@@ -164,13 +164,16 @@ export default function Social() {
                     : "your friends haven't logged anything yet"}
                 </li>
               )}
+              {/* the feed is friends only, so everyone in it has a profile to open */}
               {events?.map((e) => (
-                <li className="feed-item" key={e.id}>
-                  <UserAvatar user={e.person} size={30} />
-                  <span className="feed-text">
-                    <strong>{e.person.name}</strong> {e.text}!
-                  </span>
-                  <span className="feed-time">{ago(now - e.at)}</span>
+                <li key={e.id}>
+                  <button className="feed-item" type="button" onClick={() => setSelected(e.person)}>
+                    <UserAvatar user={e.person} size={30} />
+                    <span className="feed-text">
+                      <strong>{e.person.name}</strong> {e.text}!
+                    </span>
+                    <span className="feed-time">{ago(now - e.at)}</span>
+                  </button>
                 </li>
               ))}
             </ul>

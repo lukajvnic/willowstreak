@@ -262,7 +262,9 @@ with no confirmation (Luka's call). This goes through
 `li > button` to keep the action button from being styled as a row. A friend's
 row opens `ProfileModal` as before, which has a two-step `Unfriend` that closes
 the modal when it's done. The social tab lists incoming requests above the feed (`.feed-list.requests`, not
-clipped or faded), with accept and decline; those rows don't open a profile. The nav shows a green `.nav-dot` on "social" while requests
+clipped or faded), with accept and decline; those rows don't open a profile. Activity feed rows are
+`button.feed-item` and open that person's profile; the feed is friends only, so
+they always can. The nav shows a green `.nav-dot` on "social" while requests
 wait. "Join a friend" in NewHabit now picks from your friends, not all accounts.
 
 Both friends migrations were pushed to the live db on 2026-10-21. The backend and
