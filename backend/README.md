@@ -290,7 +290,7 @@ build a `Map<dateKey, value>`, then decide each cell's level from
 ## Deploying
 
 Fly.io or Railway both take the container and do custom domains for
-`api.willo.app`. Set `BACKEND_CORS_ORIGINS=https://willo.app`.
+`api.willo.app`. Set `BACKEND_CORS_ORIGINS=https://willo.app,https://willowstreak.com,https://www.willowstreak.com`.
 
 There is no database connection string any more — the API reaches Postgres only
 through PostgREST, so `SUPABASE_URL` plus the publishable key is the whole

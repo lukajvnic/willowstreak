@@ -329,3 +329,10 @@ Vercel, two projects off github `lukajvnic/willowstreak` (repo was renamed from
   VITE_SUPABASE_ANON_KEY, VITE_API_URL (api url).
 - supabase auth Site URL must point at the hosted frontend or confirmation
   emails redirect to localhost.
+- domain `willowstreak.com` (bought 2026-10-21) is on the `willo` frontend project
+  next to `willo-ochre.vercel.app`; the api is `willo-api.vercel.app`. production
+  `BACKEND_CORS_ORIGINS` on `willo-api` is
+  `https://willo-ochre.vercel.app,https://willowstreak.com,https://www.willowstreak.com`.
+  it's a *sensitive* env var, so its value can't be read back — overwrite it in full,
+  and redeploy, since env changes only land on a new deployment. preview's copy was
+  left as it was. the Vercel MCP connector has no access to this team; the CLI does.
