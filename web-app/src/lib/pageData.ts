@@ -9,10 +9,15 @@ import type { PersonStub } from "./usersApi";
  * ask for the same thing and land in the same cache slot */
 export const FEED_SIZE = 14;
 
+/** the habits tab's drifting bubbles — their own feed slot */
+export const BUBBLES_SIZE = 10;
+
 export const KEYS = {
   leaderboards: "leaderboards",
   todos: "todos",
   feed: `activity:${FEED_SIZE}`,
+  bubbles: `activity:${BUBBLES_SIZE}`,
+  friends: "friends",
 } as const;
 
 const warmed = new Set<string>();

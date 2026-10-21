@@ -14,6 +14,16 @@ type Slot = { value?: unknown; at: number; pending?: Promise<unknown> };
 
 const slots = new Map<string, Slot>();
 
+// bumped whenever a key's cached answer stops counting (`invalidate`, `forget`,
+// `forgetAll`), so a load already in flight is neither joined nor saved after.
+// otherwise a poll that started before a change lands after it and puts the
+// old answer back as fresh, or one from before sign-out refills the next
+// account's cache
+const versions = new Map<string, number>();
+let generation = 0;
+const versionOf = (key: string) => `${generation}.${versions.get(key) ?? 0}`;
+const bump = (key: string) => versions.set(key, (versions.get(key) ?? 0) + 1);
+
 /** cached data younger than this is served as-is, with no refetch */
 const FRESH_MS = 15_000;
 
@@ -26,15 +36,17 @@ export function preload<T>(key: string, load: () => Promise<T>): Promise<T> {
     return Promise.resolve(slot.value as T);
   }
 
-  const pending = load().then(
+  const started = versionOf(key);
+  const pending: Promise<T> = load().then(
     (value) => {
+      if (versionOf(key) !== started) throw new Error(`${key}: superseded by a newer load`);
       slots.set(key, { value, at: Date.now() });
       return value;
     },
     (err) => {
       // keep whatever was cached before — a failed refresh isn't a reason to lose it
       const prev = slots.get(key);
-      if (prev) delete prev.pending;
+      if (prev?.pending === pending) delete prev.pending;
       throw err;
     },
   );
@@ -56,17 +68,22 @@ export function remember<T>(key: string, value: T) {
 /** mark one key out of date: it's still shown while a fresh copy loads, but the
  * next `preload` of it asks the server instead of reusing it */
 export function invalidate(key: string) {
+  bump(key);
   const slot = slots.get(key);
-  if (slot) slot.at = 0;
+  if (!slot) return;
+  slot.at = 0;
+  delete slot.pending;
 }
 
 /** drop one key, so the next `preload` of it really asks the server */
 export function forget(key: string) {
+  bump(key);
   slots.delete(key);
 }
 
 /** on sign-out — the next account must never see the last one's data */
 export function forgetAll() {
+  generation += 1;
   slots.clear();
 }
 

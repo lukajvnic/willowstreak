@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import UserAvatar from "./UserAvatar";
 import { useActivity, type Activity } from "../lib/activityApi";
+import { BUBBLES_SIZE } from "../lib/pageData";
 
 type Side = "left" | "right";
 type Phase = "enter" | "visible" | "leaving";
@@ -56,7 +57,7 @@ function pickTop(sameSideTops: number[]): number {
  * each log is shown once: a few recent ones on arrival, then new ones as the
  * feed's polling turns them up */
 export default function ActivityBubbles() {
-  const items = useActivity(10);
+  const items = useActivity(BUBBLES_SIZE);
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   // entry ids already queued or shown; null until the first load
   const seen = useRef<Set<string> | null>(null);

@@ -11,6 +11,17 @@ def register(client, username="luka", first="Luka", last="J"):
     return r.json()["user"]
 
 
+def befriend(db, *user_ids):
+    """Accepted friendships straight into the store, for tests about what
+    friends can see rather than how they got there."""
+    for i, a in enumerate(user_ids):
+        for b in user_ids[i + 1:]:
+            db.insert("friendships", {
+                "requester_id": a, "addressee_id": b,
+                "status": "accepted", "accepted_at": "now()",
+            })
+
+
 def make_habit(client, name="gym", type_="completion", goal=None, unit=""):
     body = {"name": name, "type": type_, "unit": unit}
     if goal is not None:
@@ -374,7 +385,7 @@ def test_user_card_unknown_user_is_404(client):
     assert client.get(f"/api/users/{_uuid.uuid4()}/card").status_code == 404
 
 
-def test_user_habits_lists_definitions_only(client, sign_in):
+def test_user_habits_lists_definitions_only(client, sign_in, db):
     register(client, "runner", first="Ren")
     gym = make_habit(client, "gym")
     make_habit(client, "reading", "count", goal=30, unit="min")
@@ -385,8 +396,12 @@ def test_user_habits_lists_definitions_only(client, sign_in):
 
     viewer = sign_in()
     register(viewer, "viewer")
+    # no peeking: strangers see nothing
     r = viewer.get(f"/api/users/{runner_id}/habits")
-    assert r.status_code == 200
+    assert r.status_code == 200 and r.json()["habits"] == []
+
+    befriend(db, runner_id, viewer.user_id)
+    r = viewer.get(f"/api/users/{runner_id}/habits")
     # archived habits are left out, and nothing but the definition comes back
     assert r.json()["habits"] == [
         {"name": "gym", "type": "completion", "goal": None, "unit": ""},
@@ -455,7 +470,7 @@ def test_search_and_card_carry_the_avatar(client, sign_in):
 
 # ----------------------------------------------------------------- profile grids
 
-def test_user_grids_carry_entries_inside_the_window(client, sign_in):
+def test_user_grids_carry_entries_inside_the_window(client, sign_in, db):
     register(client, "runner")
     gym = make_habit(client, "gym")
     for offset in (0, 1, 40):
@@ -467,9 +482,13 @@ def test_user_grids_carry_entries_inside_the_window(client, sign_in):
     viewer = sign_in()
     register(viewer, "viewer")
     since = (TODAY - dt.timedelta(days=7)).isoformat()
-    r = viewer.get(
-        f"/api/users/{runner_id}/habits?include=entries&from={since}&to={TODAY.isoformat()}"
-    )
+    grids = f"/api/users/{runner_id}/habits?include=entries&from={since}&to={TODAY.isoformat()}"
+    assert viewer.get(grids).json()["habits"] == []
+    # your own always show
+    assert len(sign_in(runner_id).get(grids).json()["habits"]) == 2
+
+    befriend(db, runner_id, viewer.user_id)
+    r = sign_in(viewer.user_id).get(grids)
     assert r.status_code == 200
     gym_grid, reading_grid = r.json()["habits"]
     assert gym_grid["name"] == "gym" and "id" not in gym_grid
@@ -503,7 +522,7 @@ def log(client, habit_id, days_ago, value=1):
     assert client.put(f"/api/habits/{habit_id}/entries/{day}", json={"value": value}).status_code == 200
 
 
-def test_leaderboard_ranks_streaks_across_accounts(client, sign_in):
+def test_leaderboard_ranks_streaks_across_friends(client, sign_in, db):
     register(client, "luka")
     mine = make_habit(client, "gym")
     for d in range(2):
@@ -525,6 +544,11 @@ def test_leaderboard_ranks_streaks_across_accounts(client, sign_in):
         log(stale, old, d)
     make_habit(stale, "chess")  # a habit luka doesn't track makes no board for luka
 
+    stranger = sign_in()
+    register(stranger, "stranger", first="Stan")
+    log(stranger, make_habit(stranger, "gym"), 0)  # not a friend, not on the board
+
+    befriend(db, client.user_id, sam.user_id, idle.user_id, stale.user_id)
     luka = sign_in(client.user_id)
     (board,) = boards_for(luka)
     assert (board["habit"], board["type"]) == ("gym", "completion")
@@ -533,7 +557,7 @@ def test_leaderboard_ranks_streaks_across_accounts(client, sign_in):
     assert sorted(ranked[2:]) == [("idle", 0), ("stale", 0)]
 
 
-def test_leaderboard_totals_the_week_for_counted_habits(client, sign_in):
+def test_leaderboard_totals_the_week_for_counted_habits(client, sign_in, db):
     register(client, "luka")
     mine = make_habit(client, "reading", "count", goal=30, unit="min")
     log(client, mine, 0, 25)
@@ -549,6 +573,7 @@ def test_leaderboard_totals_the_week_for_counted_habits(client, sign_in):
     other_unit = make_habit(pages, "reading", "count", goal=20, unit="pages")
     log(pages, other_unit, 0, 999)  # different unit, different board
 
+    befriend(db, client.user_id, sam.user_id, pages.user_id)
     luka = sign_in(client.user_id)
     (board,) = boards_for(luka)
     assert (board["habit"], board["unit"]) == ("reading", "min")
@@ -572,7 +597,7 @@ def test_leaderboard_rejects_a_week_start_outside_the_week(client):
 
 # ----------------------------------------------------------------- activity
 
-def test_activity_is_other_peoples_logs_newest_first(client, sign_in):
+def test_activity_is_friends_logs_newest_first(client, sign_in, db):
     register(client, "luka")
     log(client, make_habit(client, "gym"), 0)
 
@@ -583,6 +608,11 @@ def test_activity_is_other_peoples_logs_newest_first(client, sign_in):
     log(sam, reading, 0, 0)  # a recorded zero isn't news
     log(sam, make_habit(sam, "gym"), 0)
 
+    stranger = sign_in()
+    register(stranger, "stranger", first="Stan")
+    log(stranger, make_habit(stranger, "gym"), 0)  # not a friend, not in the feed
+
+    befriend(db, client.user_id, sam.user_id)
     luka = sign_in(client.user_id)
     feed = luka.get("/api/activity").json()["activity"]
     assert [(a["user"]["username"], a["habit"], float(a["value"])) for a in feed] == [
@@ -764,3 +794,112 @@ def test_reminder_categories(client, sign_in):
     other = sign_in()
     register(other, "other")
     assert other.get("/api/reminders").json()["categories"] == []
+
+
+# ----------------------------------------------------------------- friends
+
+def names(client, bucket):
+    return [f["user"]["username"] for f in client.get("/api/friends").json()[bucket]]
+
+
+def test_friend_request_then_accept(client, sign_in):
+    register(client, "luka")
+    sam = sign_in()
+    register(sam, "sam", first="Sam")
+
+    luka = sign_in(client.user_id)
+    r = luka.post(f"/api/friends/requests/{sam.user_id}")
+    assert r.status_code == 201 and r.json()["friendship"]["status"] == "pending"
+    assert names(luka, "outgoing") == ["sam"] and names(luka, "friends") == []
+    # only the person asked can accept
+    assert luka.post(f"/api/friends/requests/{sam.user_id}/accept").status_code == 404
+
+    sam = sign_in(sam.user_id)
+    assert names(sam, "incoming") == ["luka"]
+    r = sam.post(f"/api/friends/requests/{client.user_id}/accept")
+    assert r.status_code == 200 and r.json()["friendship"]["accepted_at"] is not None
+    assert names(sam, "friends") == ["luka"] and names(sam, "incoming") == []
+
+    luka = sign_in(client.user_id)
+    assert names(luka, "friends") == ["sam"] and names(luka, "outgoing") == []
+
+
+def test_asking_someone_who_asked_you_accepts(client, sign_in):
+    register(client, "luka")
+    sam = sign_in()
+    register(sam, "sam", first="Sam")
+    assert sam.post(f"/api/friends/requests/{client.user_id}").status_code == 201
+
+    luka = sign_in(client.user_id)
+    r = luka.post(f"/api/friends/requests/{sam.user_id}")
+    assert r.status_code == 200 and r.json()["friendship"]["status"] == "accepted"
+    assert names(luka, "friends") == ["sam"]
+
+
+def test_friend_request_conflicts_and_bad_targets(client, sign_in):
+    import uuid as _uuid
+
+    register(client, "luka")
+    sam = sign_in()
+    register(sam, "sam", first="Sam")
+
+    luka = sign_in(client.user_id)
+    assert luka.post(f"/api/friends/requests/{sam.user_id}").status_code == 201
+    r = luka.post(f"/api/friends/requests/{sam.user_id}")
+    assert r.status_code == 409 and r.json()["error"]["code"] == "friendship_exists"
+
+    r = luka.post(f"/api/friends/requests/{client.user_id}")
+    assert r.status_code == 422 and r.json()["error"]["code"] == "cannot_friend_yourself"
+    r = luka.post(f"/api/friends/requests/{_uuid.uuid4()}")
+    assert r.status_code == 404 and r.json()["error"]["code"] == "user_not_found"
+    assert luka.post("/api/friends/requests/not-a-uuid").status_code == 422
+
+
+def test_decline_cancel_and_unfriend(client, sign_in):
+    register(client, "luka")
+    sam = sign_in()
+    register(sam, "sam", first="Sam")
+
+    # cancel your own request
+    luka = sign_in(client.user_id)
+    luka.post(f"/api/friends/requests/{sam.user_id}")
+    assert luka.delete(f"/api/friends/requests/{sam.user_id}").status_code == 204
+    assert luka.delete(f"/api/friends/requests/{sam.user_id}").status_code == 404
+
+    # decline theirs
+    luka.post(f"/api/friends/requests/{sam.user_id}")
+    sam = sign_in(sam.user_id)
+    assert sam.delete(f"/api/friends/requests/{client.user_id}").status_code == 204
+    assert names(sam, "incoming") == []
+
+    # a request isn't a friendship, and a friendship isn't a request
+    sam.post(f"/api/friends/requests/{client.user_id}")
+    assert sam.delete(f"/api/friends/{client.user_id}").status_code == 404
+    luka = sign_in(client.user_id)
+    luka.post(f"/api/friends/requests/{sam.user_id}/accept")
+    assert luka.delete(f"/api/friends/requests/{sam.user_id}").status_code == 404
+
+    assert luka.delete(f"/api/friends/{sam.user_id}").status_code == 204
+    assert names(luka, "friends") == []
+    r = luka.delete(f"/api/friends/{sam.user_id}")
+    assert r.status_code == 404 and r.json()["error"]["code"] == "friend_not_found"
+
+
+def test_unfriending_takes_them_off_your_board_and_feed(client, sign_in):
+    register(client, "luka")
+    log(client, make_habit(client, "gym"), 0)
+    sam = sign_in()
+    register(sam, "sam", first="Sam")
+    log(sam, make_habit(sam, "gym"), 0)
+    sam.post(f"/api/friends/requests/{client.user_id}")
+
+    luka = sign_in(client.user_id)
+    # a pending request isn't a friendship yet
+    assert [e["user"]["username"] for e in boards_for(luka)[0]["entries"]] == ["luka"]
+    luka.post(f"/api/friends/requests/{sam.user_id}/accept")
+    assert sorted(e["user"]["username"] for e in boards_for(luka)[0]["entries"]) == ["luka", "sam"]
+    assert len(luka.get("/api/activity").json()["activity"]) == 1
+
+    luka.delete(f"/api/friends/{sam.user_id}")
+    assert [e["user"]["username"] for e in boards_for(luka)[0]["entries"]] == ["luka"]
+    assert luka.get("/api/activity").json()["activity"] == []

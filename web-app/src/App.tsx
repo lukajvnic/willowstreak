@@ -13,6 +13,7 @@ import { AvatarPreview } from "./lib/avatarKit";
 import { useAvatarState } from "./lib/AvatarContext";
 import { RAMPS, type RampName } from "./lib/habits";
 import { useAuth } from "./lib/auth";
+import { useFriends } from "./lib/friendsApi";
 import {
   createHabit,
   deleteHabit,
@@ -43,6 +44,8 @@ export default function App() {
   const token = session?.access_token;
   const me = profile !== null && profile !== "none" ? profile : null;
   const signedIn = Boolean(token) && me !== null;
+  // polled here so the social tab's dot is right from any tab
+  const waiting = useFriends()?.incoming.length ?? 0;
 
   useEffect(() => {
     if (!signedIn || !token) {
@@ -142,8 +145,10 @@ export default function App() {
                 onPointerEnter={() => token && preloadTab(item, token)}
                 onFocus={() => token && preloadTab(item, token)}
                 onClick={() => setTab(item)}
+                aria-label={item === "social" && waiting > 0 ? `social, ${waiting} friend requests` : undefined}
               >
                 {item}
+                {item === "social" && waiting > 0 && <span className="nav-dot" aria-hidden />}
               </button>
             ))}
           </div>

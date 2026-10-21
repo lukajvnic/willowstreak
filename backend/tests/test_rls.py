@@ -104,6 +104,12 @@ insert into public.reminders (id, user_id, title, kind) values
   ('{A_REMINDER}','{A}','haircut','refile');
 insert into public.reminder_categories (user_id, name) values ('{A}','garden');
 insert into storage.objects (bucket_id, name) values ('avatars', '{A}/seed.webp');
+
+-- luka and sam are friends, so are cleo and dev; cleo has asked luka, but
+-- until luka accepts they're strangers
+insert into public.friendships (requester_id, addressee_id, status, accepted_at) values
+  ('{A}','{B}','accepted', now()), ('{C}','{D}','accepted', now());
+insert into public.friendships (requester_id, addressee_id) values ('{C}','{A}');
 """
 
 pytestmark = pytest.mark.skipif(
@@ -253,6 +259,8 @@ def test_helper_functions_are_not_callable_anonymously():
         "public.get_user_grids(uuid, date, date)",
         "public.get_leaderboards(date, date)",
         "public.get_activity(integer)",
+        "public.get_friendships()",
+        "public.my_circle()",
     ):
         granted = _psql(DB, f"select has_function_privilege('anon', '{fn}', 'execute');")
         assert granted.strip() == "f", f"anon can execute {fn}"
@@ -319,11 +327,12 @@ def test_leaderboard_streak_survives_an_unlogged_today():
     assert rows(A, later) == ["luka/0", "sam/0"]
 
 
-def test_activity_shows_everyone_but_the_caller():
-    assert scalar(A, "select count(*)||'/'||bool_and(username <> 'luka') "
-                     "from public.get_activity(50);") == "5/true"
-    assert scalar(A, "select count(*) from public.get_activity(2);") == "2"
-    assert scalar(A, "select count(*) from public.get_activity(100000);") == "5"
+def test_activity_shows_friends_only():
+    """sam's two logs; cleo's and dev's aren't luka's business."""
+    assert scalar(A, "select count(*)||'/'||bool_and(username = 'sam') "
+                     "from public.get_activity(50);") == "2/true"
+    assert scalar(A, "select count(*) from public.get_activity(1);") == "1"
+    assert scalar(A, "select count(*) from public.get_activity(100000);") == "2"
 
 
 # ----------------------------------------------------------------- reminders
@@ -371,3 +380,106 @@ def test_only_the_owner_can_delete_an_avatar():
     drop = f"delete from storage.objects where name = '{A}/seed.webp';"
     assert "DELETE 0" in as_user(B, drop)
     assert "DELETE 1" in as_user(A, drop)
+
+
+# ----------------------------------------------------------------- friendships
+
+CLEO_ASKED_LUKA = f"requester_id = '{C}' and addressee_id = '{A}'"
+
+
+def test_friendships_are_visible_to_the_two_people_only():
+    count = f"select count(*) from public.friendships where {CLEO_ASKED_LUKA};"
+    assert scalar(A, count) == "1"
+    assert scalar(C, count) == "1"
+    assert scalar(B, count) == "0"
+
+
+def test_only_the_person_asked_can_accept():
+    accept = ("update public.friendships set status = 'accepted', accepted_at = now() "
+              f"where {CLEO_ASKED_LUKA};")
+    assert "UPDATE 0" in as_user(C, accept)
+    assert "UPDATE 0" in as_user(B, accept)
+    assert "UPDATE 1" in as_user(A, accept)
+
+
+def test_accepting_cannot_rewrite_the_pair():
+    out = as_user(A, f"update public.friendships set requester_id = '{B}' where {CLEO_ASKED_LUKA};")
+    assert "permission denied" in out
+
+
+def test_requests_are_sent_as_yourself_and_as_requests():
+    out = as_user(B, f"insert into public.friendships (requester_id, addressee_id) "
+                     f"values ('{A}','{B}');")
+    assert "row-level security" in out
+    out = as_user(B, f"insert into public.friendships (requester_id, addressee_id, status, accepted_at) "
+                     f"values ('{B}','{D}','accepted', now());")
+    assert "row-level security" in out
+    ok = as_user(B, f"insert into public.friendships (requester_id, addressee_id) values ('{B}','{D}');")
+    assert "INSERT 0 1" in ok
+
+
+def test_one_row_per_pair_either_way():
+    out = as_user(A, f"insert into public.friendships (requester_id, addressee_id) values ('{A}','{C}');")
+    assert "uq_friendship_pair" in out
+    out = as_user(A, f"insert into public.friendships (requester_id, addressee_id) values ('{A}','{A}');")
+    assert "ck_friendship_not_self" in out
+
+
+def test_either_person_can_remove_it_and_no_one_else():
+    drop = f"delete from public.friendships where {CLEO_ASKED_LUKA};"
+    assert "DELETE 0" in as_user(B, drop)
+    assert "DELETE 1" in as_user(A, drop)
+    assert "DELETE 1" in as_user(C, drop)
+
+
+def test_get_friendships_carries_the_other_persons_profile():
+    """security definer to see the other person's users row, which RLS hides —
+    but only for the caller's own friendships."""
+    shape = "select username||'/'||status||'/'||incoming from public.get_friendships();"
+    assert sorted(rows(A, shape)) == ["cleo/pending/true", "sam/accepted/false"]
+    assert sorted(rows(C, shape)) == ["dev/accepted/false", "luka/pending/false"]
+    assert rows(B, shape) == ["luka/accepted/true"]
+
+
+def test_no_peeking_at_strangers():
+    """cleo's request is still pending, so to luka she's a stranger: no habits,
+    no grids, and she isn't on his boards. her card stays visible."""
+    assert scalar(A, f"select count(*) from public.get_user_habits('{C}');") == "0"
+    assert scalar(A, f"select count(*) from public.get_user_grids('{C}', current_date - 7, current_date);") == "0"
+    assert scalar(A, f"select username from public.get_user_card('{C}');") == "cleo"
+    # your own still show
+    assert scalar(C, f"select count(*) from public.get_user_habits('{C}');") == "1"
+    # once luka accepts, they're friends both ways
+    assert scalar(A, "update public.friendships set status = 'accepted', accepted_at = now() "
+                     f"where {CLEO_ASKED_LUKA}; select count(*) from public.get_user_habits('{C}');") == "1"
+
+
+def as_user_after(setup: str, user_id: str, sql: str) -> list[str]:
+    """Like rows(), but runs `setup` as the owner first, inside the same
+    rolled-back transaction, for rows the caller couldn't insert themselves."""
+    wrapped = (
+        f"begin; {setup} set local role authenticated; "
+        f"set local request.jwt.claims = '{{\"sub\":\"{user_id}\"}}'; "
+        f"{sql} rollback;"
+    )
+    return [
+        line.strip() for line in _psql(DB, wrapped, check=False).splitlines()
+        if line.strip() and not _TAGS.match(line.strip())
+    ]
+
+
+def test_strangers_are_not_on_your_boards():
+    """cleo starts tracking gym too. Her request to luka is still pending, so
+    she's a stranger and his gym board stays luka and sam; once he accepts,
+    she's on it."""
+    cleo_gym = "cccc0000-0000-0000-0000-00000000000c"
+    setup = (f"insert into public.habits (id, user_id, name, type) "
+             f"values ('{cleo_gym}','{C}','Gym','completion'); "
+             f"insert into public.habit_entries (habit_id, entry_date, value) "
+             f"values ('{cleo_gym}', current_date, 1);")
+    board = ("select username from public.get_leaderboards(current_date, current_date - 3) "
+             "where habit = 'gym';")
+    assert as_user_after(setup, A, board) == ["luka", "sam"]
+    accept = ("update public.friendships set status = 'accepted', accepted_at = now() "
+              f"where {CLEO_ASKED_LUKA};")
+    assert sorted(as_user_after(setup, A, accept + board)) == ["cleo", "luka", "sam"]
