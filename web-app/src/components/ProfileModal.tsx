@@ -5,6 +5,7 @@ import UserAvatar from "./UserAvatar";
 import { useAuth } from "../lib/auth";
 import { AvatarPreview } from "../lib/avatarKit";
 import { useAvatarState } from "../lib/AvatarContext";
+import { changeFriendship, relationTo, useFriends } from "../lib/friendsApi";
 import { loadUserGrids, type HabitWithEntries } from "../lib/habitsApi";
 import { getUserCard, type Person, type PersonStub } from "../lib/usersApi";
 
@@ -13,8 +14,9 @@ const GRID_WEEKS = 24;
 
 type Props = { person: PersonStub; onClose: () => void; onSignOut?: () => void };
 
-/** anyone's profile, your own included. it opens on what the caller already
- * knows — name, handle, avatar — and fills in the card and the grids as they load */
+/** a friend's profile, or your own. it opens on what the caller already
+ * knows — name, handle, avatar — and fills in the card and the grids as they load.
+ * nobody else's opens: search offers "add friend" instead */
 export default function ProfileModal({ person, onClose, onSignOut }: Props) {
   const { session, profile } = useAuth();
   const token = session?.access_token;
@@ -29,6 +31,10 @@ export default function ProfileModal({ person, onClose, onSignOut }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const isMe = profile !== null && profile !== "none" && profile.id === person.id;
+  const friends = useFriends();
+  const isFriend = !isMe && friends !== null && relationTo(friends, person.id) === "friends";
+
   useEffect(() => {
     if (!token) return;
     let stale = false;
@@ -42,8 +48,6 @@ export default function ProfileModal({ person, onClose, onSignOut }: Props) {
       stale = true;
     };
   }, [token, person.id]);
-
-  const isMe = profile !== null && profile !== "none" && profile.id === person.id;
   // your own avatar comes from the live editing state, so a change shows before it's saved
   const { photo, skin, worn } = useAvatarState();
   // collapsed until the avatar itself is clicked, so opening your profile doesn't
@@ -84,6 +88,7 @@ export default function ProfileModal({ person, onClose, onSignOut }: Props) {
             <p className="profile-handle">{person.handle}</p>
             {card?.bio && <p className="profile-bio">{card.bio}</p>}
           </div>
+          {isFriend && <Unfriend id={person.id} onDone={onClose} />}
         </div>
 
         <div className="stats">
@@ -110,5 +115,36 @@ export default function ProfileModal({ person, onClose, onSignOut }: Props) {
         )}
       </div>
     </div>
+  );
+}
+
+/** ends the friendship. asks twice, in place, then closes the profile, since
+ * a profile only opens for friends */
+function Unfriend({ id, onDone }: { id: string; onDone: () => void }) {
+  const token = useAuth().session?.access_token;
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  return (
+    <button
+      className="new-delete"
+      type="button"
+      disabled={busy}
+      data-confirming={confirming}
+      onClick={() => {
+        if (!confirming) return setConfirming(true);
+        if (!token) return;
+        setBusy(true);
+        changeFriendship(token, "unfriend", id)
+          .then(onDone)
+          .catch((err) => {
+            console.error(err);
+            setBusy(false);
+          });
+      }}
+      onBlur={() => setConfirming(false)}
+    >
+      {confirming ? "sure? unfriend" : "unfriend"}
+    </button>
   );
 }

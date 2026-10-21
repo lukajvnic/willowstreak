@@ -16,8 +16,9 @@ browser ──signup/login/refresh──> Supabase Auth        (@supabase/supaba
 ## v1 scope
 
 Users (with avatars), habits, habit entries, leaderboards, an activity feed,
-and reminders. Friendships are not in v1 — so everything social is visible to
-every signed-in user, not to a friends list.
+reminders, and friends. Friendship is what gates the social reads: your
+leaderboards, your feed and someone's habits only ever include you and your
+friends. Search and the profile card stay open to every signed-in user.
 
 ## Authorization lives in SQL
 
@@ -44,8 +45,10 @@ This is the opposite of enforcing access in Python. Consequences worth knowing:
   holds a name. `search_users()`, `get_user_card()`, `get_user_habits()`,
   `get_user_grids()`, `get_leaderboards()` and `get_activity()` are the social
   reads: each exists to show the caller a named slice of other people's rows.
-  With no friendships yet, that slice covers every account — narrowing it later
-  is a join inside these functions.
+  Search and the card cover every account; the habits, grids, leaderboards
+  and feed are limited to `my_circle()` (the caller plus accepted friends,
+  migration `20261021130000_friends_only.sql`). `get_friendships()` returns the
+  caller's own friendships with the other person's public profile.
 - `get_my_stats()` is `security invoker` on purpose — it inherits the caller's
   policies, so it needs no user argument and can't be pointed at someone else.
 
@@ -68,7 +71,10 @@ app/
 └── modules/
     ├── users/              routes -> controller -> service -> schemas
     ├── habits/
-    └── entries/
+    ├── entries/
+    ├── social/
+    ├── reminders/
+    └── friends/
 ```
 
 `routes` declares HTTP and dependencies, `controller` unpacks `CurrentUser` into
@@ -97,13 +103,13 @@ supabase db push
 uv run pytest
 ```
 
-83 tests, no Docker and no Supabase project required:
+101 tests, no Docker and no Supabase project required:
 
-- **`test_api.py`** (30) drives the real app through `TestClient` with
+- **`test_api.py`** (67) drives the real app through `TestClient` with
   `dependency_overrides` swapping in an in-memory fake client
   (`tests/fake_supabase.py`) that stores rows and enforces the migration's
   constraints. Covers routing, validation, error envelopes, and service logic.
-- **`test_rls.py`** (11) runs against a local Postgres, applying the real
+- **`test_rls.py`** (34) runs against a local Postgres, applying the real
   migration and executing as the `authenticated` role with the JWT claims
   Supabase would set. **This is the only place the authorization boundary is
   actually tested**, since the fake has no concept of policies. Skipped
@@ -154,7 +160,8 @@ GET   /api/users/{id}/habits?include=entries&from=YYYY-MM-DD&to=YYYY-MM-DD
 `/users/{id}/habits` is someone's unarchived habits, definition only — no ids.
 The new-habit dialog copies from it. With `include=entries` it also carries a
 window of days, which is what a profile draws its grids from (your own
-included). An unknown id is an empty list.
+included). **Friends only:** for anyone else, and for an unknown id, it's an
+empty list. The card has no habit names, so it stays open.
 
 **Avatars.** `avatar` is the drawn figure, `{skin: "#RRGGBB", head, shirt}` with
 `head`/`shirt` being item ids from the frontend's kit. `avatar_path` is the
@@ -199,15 +206,17 @@ GET /api/activity?limit=20                                     -> {activity: [..
                "logged_at": "2026-10-13T18:02:11Z"}]}
 ```
 
-**Leaderboards:** one board per habit *the caller* tracks, ranking everyone with
-an unarchived habit of the same name (`habits.name_key` — lowercased, trimmed).
+**Leaderboards:** one board per habit *the caller* tracks, ranking the caller and
+their friends with an unarchived habit of the same name (`habits.name_key` —
+lowercased, trimmed). Two people with the same habit see different boards unless
+they have the same friends; with no friends on it, a board is just you.
 A `completion` board ranks by current streak in days; a `count` board by the
 total for the week starting `week_start`, and only among people counting in the
 same unit. Entries arrive ranked, at most 100 a board, and people at zero are
 included. Both dates are the client's local dates: `week_start` must be within
 the six days before `today` or it's **422 `week_start_out_of_range`**.
 
-**Activity:** the most recent logged days from everyone except the caller,
+**Activity:** the most recent logged days from the caller's friends,
 newest first, `limit` 1–50. A recorded zero isn't included. `id` is the entry's
 id, so a polling client can tell what it has already shown.
 
@@ -235,6 +244,37 @@ the row before the request returns, and a client-made id means that row is
 already the saved one; replaying a create is a 409, not a duplicate.
 `category_id` is plain text: either a built-in slug the client owns (`work`,
 `health`...) or the id of one of the caller's `categories`.
+
+### Friends
+
+```
+GET    /api/friends                            -> {friends, incoming, outgoing}
+POST   /api/friends/requests/{user_id}         -> 201 {friendship} | 200 if it accepted theirs
+POST   /api/friends/requests/{user_id}/accept  -> {friendship} | 404 request_not_found
+DELETE /api/friends/requests/{user_id}         -> 204 | 404 request_not_found
+DELETE /api/friends/{user_id}                  -> 204 | 404 friend_not_found
+```
+
+```jsonc
+{"friends":  [{"user": {"id": "uuid", "username": "sam", ...}, "since": "2026-10-21T..."}],
+ "incoming": [...], "outgoing": [...]}
+
+{"friendship": {"requester_id": "uuid", "addressee_id": "uuid", "status": "pending",
+                "created_at": "2026-10-21T...", "accepted_at": null}}
+```
+
+LinkedIn-style: one `friendships` row per pair, `pending` until the person
+asked accepts it, then `accepted` both ways. Everything is keyed by the other
+person's user id. `since` is when it was accepted, or when the request was sent
+while it's pending.
+
+- Sending to someone who already asked you accepts theirs (**200**, not 201).
+- Sending again, or to a friend, is **409 `friendship_exists`**; to yourself
+  **422 `cannot_friend_yourself`**; to an unknown id **404 `user_not_found`**.
+- `DELETE /friends/requests/{id}` declines theirs or cancels yours. Declining,
+  cancelling and unfriending all delete the row, so either person can ask again.
+- RLS: only the two people see the row and either can delete it; only the person
+  asked can accept; the pair columns can't be updated at all.
 
 ### Habits
 

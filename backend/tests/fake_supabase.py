@@ -22,6 +22,7 @@ EMBED_FK = {"habit_entries": "habit_id"}
 
 UNIQUE_VIOLATION = "23505"
 CHECK_VIOLATION = "23514"
+FOREIGN_KEY_VIOLATION = "23503"
 
 
 class _Response:
@@ -225,6 +226,8 @@ class _Rpc:
             return _Response([{**card, **self._db.stats(target)}])
         if self._name == "get_user_habits":
             target = str(self._params["p_user_id"])
+            if target not in self._db.circle():
+                return _Response([])
             rows = sorted(
                 (h for h in self._db.tables.get("habits", [])
                  if str(h["user_id"]) == target and h.get("archived_at") is None),
@@ -237,6 +240,8 @@ class _Rpc:
             target = str(self._params["p_user_id"])
             lo, hi = self._params["p_from"], self._params["p_to"]
             grids = []
+            if target not in self._db.circle():
+                return _Response([])
             for h in self._db.active_habits(target):
                 days = sorted(
                     (e for e in self._db.tables["habit_entries"]
@@ -255,6 +260,8 @@ class _Rpc:
             ))
         if self._name == "get_activity":
             return _Response(self._db.activity(int(self._params["p_limit"])))
+        if self._name == "get_friendships":
+            return _Response(self._db.friendships())
         raise AssertionError(f"unknown rpc {self._name}")
 
 
@@ -264,7 +271,7 @@ class FakeDB:
     def __init__(self) -> None:
         self.tables: dict[str, list[dict]] = {
             "users": [], "habits": [], "habit_entries": [],
-            "reminders": [], "reminder_categories": [],
+            "reminders": [], "reminder_categories": [], "friendships": [],
         }
         self.current_user_id: str | None = None
 
@@ -308,6 +315,8 @@ class FakeDB:
             str(r["id"]) == str(row["id"]) for r in self.tables[table]
         ):
             raise APIError({"code": UNIQUE_VIOLATION, "message": f"{table}_pkey"})
+        if table == "friendships":
+            self._check_friendship(row)
         if table == "habit_entries":
             row.setdefault("updated_at", None)
             key = (str(row["habit_id"]), str(row["entry_date"]))
@@ -317,6 +326,47 @@ class FakeDB:
         self.check_constraints(table, [row])
         self.tables[table].append(row)
         return row
+
+    def _check_friendship(self, row: dict) -> None:
+        """ck_friendship_not_self, the foreign keys, and uq_friendship_pair."""
+        row.setdefault("status", "pending")
+        row.setdefault("accepted_at", None)
+        pair = {str(row["requester_id"]), str(row["addressee_id"])}
+        if len(pair) == 1:
+            raise APIError({"code": CHECK_VIOLATION, "message": "ck_friendship_not_self"})
+        users = {str(u["id"]) for u in self.tables["users"]}
+        if not pair <= users:
+            raise APIError({"code": FOREIGN_KEY_VIOLATION, "message": "friendships_fkey"})
+        if any({str(f["requester_id"]), str(f["addressee_id"])} == pair
+               for f in self.tables["friendships"]):
+            raise APIError({"code": UNIQUE_VIOLATION, "message": "uq_friendship_pair"})
+
+    def circle(self) -> set[str]:
+        """Same as my_circle(): the caller plus their accepted friends."""
+        me = str(self.current_user_id)
+        mine = {me}
+        for f in self.tables["friendships"]:
+            pair = {str(f["requester_id"]), str(f["addressee_id"])}
+            if f["status"] == "accepted" and me in pair:
+                mine |= pair
+        return mine
+
+    def friendships(self) -> list[dict]:
+        """Same shape as get_friendships(): the caller's rows, each with the
+        other person's public profile, newest first."""
+        me = str(self.current_user_id)
+        rows = []
+        for f in self.tables["friendships"]:
+            if me not in (str(f["requester_id"]), str(f["addressee_id"])):
+                continue
+            incoming = str(f["addressee_id"]) == me
+            other = str(f["requester_id"] if incoming else f["addressee_id"])
+            rows.append({
+                **self._user_row(other), "status": f["status"], "incoming": incoming,
+                "created_at": f["created_at"], "accepted_at": f["accepted_at"],
+            })
+        rows.sort(key=lambda r: str(r["accepted_at"] or r["created_at"]), reverse=True)
+        return rows
 
     def active_habits(self, user_id: str) -> list[dict]:
         return sorted(
@@ -341,21 +391,23 @@ class FakeDB:
 
     def leaderboards(self, today: date, week_start: date) -> list[dict]:
         """Same rules as get_leaderboards(): a board per habit the caller
-        tracks, matched across accounts by lowercased name (and unit, for
-        counts); streak that reaches yesterday, or the week's total."""
+        tracks, matched across the caller's friends by lowercased name (and
+        unit, for counts); streak that reaches yesterday, or the week's total."""
         def key(h: dict) -> tuple[str, str, str]:
             unit = h["unit"].strip().lower() if h["type"] == "count" else ""
             return (h["name"].strip().lower(), h["type"], unit)
 
         rows: list[dict] = []
         seen: set[tuple[str, str, str]] = set()
+        circle = self.circle()
         for mine in self.active_habits(str(self.current_user_id)):
             if key(mine) in seen:
                 continue
             seen.add(key(mine))
             scores: dict[str, float] = {}
             for h in self.tables["habits"]:
-                if h.get("archived_at") is not None or key(h) != key(mine):
+                if (h.get("archived_at") is not None or key(h) != key(mine)
+                        or str(h["user_id"]) not in circle):
                     continue
                 days = self._days(h)
                 if h["type"] == "count":
@@ -379,10 +431,12 @@ class FakeDB:
 
     def activity(self, limit: int) -> list[dict]:
         habits = {str(h["id"]): h for h in self.tables["habits"]}
+        circle = self.circle()
         rows = []
         for e in self.tables["habit_entries"]:
             h = habits[str(e["habit_id"])]
             if (str(h["user_id"]) == str(self.current_user_id)
+                    or str(h["user_id"]) not in circle
                     or h.get("archived_at") is not None or float(e["value"]) <= 0):
                 continue
             rows.append({

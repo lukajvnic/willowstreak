@@ -11,10 +11,10 @@ the knowledge directory is for ai agents to store context about the project
 - repeating reminders (2026-10-17): stored as `reminders.repeat` (daily | weekdays | weekly | biweekly | monthly | yearly) plus `repeat_until` (a date, or null to repeat forever), from migration `20261017120000_reminder_repeat.sql`. both anchors and floaters can repeat, but a floater only on a weekly-or-longer rule (`ck_reminder_repeat`, mirrored in `ReminderShape`). the row always holds the current occurrence. `occurrenceOn(r, key)` in `lib/todos.ts` works out every later one, and `covers()` goes through it, so the calendar, the day filter and the band all show repeats without any extra handling. monthly dates clamp to the month's last day (jan 31 → feb 28), and day counts go through UTC noon so a daylight-saving change can't knock them off. ticking off a repeating reminder works like Apple's: the row moves to `nextOccurrence` through the normal `PUT` edit and stays not done, and once the next date would pass `repeat_until`, ticking marks it done. the band draws one chip per occurrence on screen (`bandChips`). alerts check occurrences from yesterday to 2 days out, and remember sent ones per occurrence day. on the client, `repeat` is undefined / null in the same way as `alert`, and the backend writes `repeat` / `repeat_until` only when they're in `model_fields_set`.
 - drag to create + new when-pickers (2026-10-20): on the week grid, pressing an empty stretch of a day and pulling draws a dashed `.event-sketch` block (15-min snap, can't pass midnight, pulling upward works too); a plain click drops the default hour on the clicked slot. letting go opens `AddReminder` with a `Preset` (day, time, length) and kind already set to anchor, so typing a title and pressing enter files it. mouse/pen only — a touch on the grid still scrolls. the dialog's date/time/length fields live in `components/WhenFields.tsx`: `DateField` shows "thu, oct 22 · in 2 days" and opens a notion-calendar-style popover: a box you type into (`parseDate` in `lib/todos.ts` reads "fri", "next fri", "in 3 days", "oct 22", "22 oct", "10/22", "22"; a date with no year is the next one coming), a month grid with ‹ › and "today", today's number in red, the picked day filled white, and a floater's window shaded across both its fields' months (`range`). arrows move a day/week, enter picks, escape closes just the popover, a click outside closes it. `min` greys out earlier days; `onClear` adds a "clear" row (used by "end repeat", empty = forever); `align="end"` pins it to the right edge for right-column fields. `TimeSelect` is a typeable combobox (`parseTime` in `lib/todos.ts` reads "10a", "930pm", "21:15", "noon") with a 15-min list. anchors pick start – end (the end list labels each option with its length; moving the start keeps the length) plus length chips 15m–3h; quick chips for days (today / tomorrow / next mon) and floater windows (this week / next week / next 2 weeks / this month). the old h/m number inputs are gone. alert and repeat are `MenuSelect`s (same file) instead of native selects: a face like the date's with a chevron, opening a grouped menu with a ✓ on the current choice, keyboard ↑ ↓ enter / escape. each option carries a hint worked out from the dialog's day and start time — an alert shows when it goes off ("9:45am", "10:00am the day before"), a repeat where it lands ("on thu", "on the 22nd", "on oct 22"; "from …" for a floater, "mon – fri" for weekdays).
 - migrations on the live database: `duration_minutes` (10-13), `alert_minutes` (10-16) and `repeat` (10-17) were missing from 2026-10-17 until 2026-10-20, so custom lengths, alerts and repeats failed to save. a write naming a missing column fails with PostgREST `PGRST204`, which the reminders service reports as a 503 with code `database_migration_missing`. applied 2026-10-20 with `npx supabase db push`; `npx supabase migration list` showed every local migration on the remote afterwards. the CLI is now logged in and linked to project `tkdnnntsskckgbdqenzv`. nothing applies migrations automatically: run `db push` whenever a new one lands, or the tests (fake Supabase / fresh local Postgres) will pass while the live database lags. on Windows PowerShell, `npx` is blocked by the execution policy, so use `npx.cmd` or cmd; `supabase login` needs a real terminal, not the `!` prompt. `backend/.env` has a placeholder `SUPABASE_SERVICE_ROLE_KEY` (`local-ser…`), so admin scripts can't reach the database. the Notion assessment import (yoyophopho, 30 anchors) went through the app API using the browser session instead.
-- tab preloading (2026-10-14): `src/lib/preload.ts` is a small shared cache (`preload` joins in-flight loads and reuses data <15s old; `peek`, `remember`, `invalidate`, `forget`, `forgetAll`; `usePreloaded` hook = cached copy first, fresh copy behind it). `src/lib/pageData.ts` holds the cache keys and each tab's loader. once the habits load, App warms leaderboard / to-do / social data on `requestIdleCallback`, again on nav hover/focus, and warms leaderboard + feed avatar photos via `new Image()`. Todo writes its local edits back with `remember` so returning to it doesn't flash old data; logging a habit `invalidate`s the leaderboards; sign-out calls `forgetAll`. `useActivity` polls through the same cache (key `activity:<limit>`).
+- tab preloading (2026-10-14): `src/lib/preload.ts` is a small shared cache (`preload` joins in-flight loads and reuses data <15s old; `peek`, `remember`, `invalidate`, `forget`, `forgetAll`; `usePreloaded` hook = cached copy first, fresh copy behind it). `src/lib/pageData.ts` holds the cache keys and each tab's loader. once the habits load, App warms leaderboard / to-do / social data on `requestIdleCallback`, again on nav hover/focus, and warms leaderboard + feed avatar photos via `new Image()`. Todo writes its local edits back with `remember` so returning to it doesn't flash old data; logging a habit `invalidate`s the leaderboards; sign-out calls `forgetAll`. `useActivity` polls through the same cache (key `activity:<limit>`). (2026-10-21) `invalidate`, `forget` and `forgetAll` bump a per-key version / global generation: a load already in flight is no longer joined, and its result is rejected ("superseded") instead of saved. Without that, a poll from before a friend change would put the old answer back as fresh, and one from before sign-out would refill the next account's cache.
 - `backend/`, `ios-app/` — early, mostly empty.
 - styling is one hand-written stylesheet, `web-app/src/index.css`. no css modules, no tailwind. class names are plain and global (`.panel`, `.heatmap`, `.cell`). colour ramps come in per-habit as css vars (`--c0`..`--c4`) set inline by `Heatmap`.
-- the habits tab is live against the backend: `src/lib/auth.tsx` (supabase-js session + profile), `src/components/AuthGate.tsx` (login/signup/pick-username), `src/lib/habitsApi.ts` (one `include=entries` fetch, create, upsert-on-log). `Heatmap` takes `entries` + `onLog` props for real data and still falls back to the seeded mock series (`buildSeries`) when they're absent — friends' grids in `ProfileModal` and the leaderboard/social tabs stay mock. habit colour ramps are client-side only (localStorage by habit id, name-hash fallback).
+- the habits tab is live against the backend: `src/lib/auth.tsx` (supabase-js session + profile), `src/components/AuthGate.tsx` (login/signup/pick-username), `src/lib/habitsApi.ts` (one `include=entries` fetch, create, upsert-on-log). `Heatmap` requires `entries`; there's no mock data left anywhere (leaderboard, feed, profile grids and "join a friend" all hit the API). habit colour ramps are client-side only (localStorage by habit id, name-hash fallback).
 
 ## habits page
 
@@ -181,17 +181,18 @@ results come and go, which is intended. the body is a `<form>` in every mode:
 enter in the search box can't create anything because no habit is picked while
 that box is on screen.
 
-the `join a friend` search and the social tab's search are the same pieces:
-`useAccountSearch` (`src/lib/usersApi.ts`), `SearchField`, `AccountList`. once an
-account is picked the search pill is reused as a chip showing who it is, with ×
-to go back. your own account is filtered out of the copy results.
+the `join a friend` picker reuses the social tab's `SearchField` and `AccountList`,
+but since 2026-10-21 it lists your friends (`useFriends`, filtered client-side by
+the box) rather than calling `useAccountSearch`, because nobody else's habits are
+visible. once an account is picked the search pill is reused as a chip showing
+who it is, with × to go back.
 
 ## leaderboard
 
 `src/components/Leaderboard.tsx` is one component with two stacked layers inside a fixed 392px
 `.stage`: the ionic-column podium (top 3) and the full ranked list. `.slide-inner[data-view]`
-slides one layer out and the other in; stepping between boards (`BOARDS` in
-`src/lib/leaderboards.ts`) slides the whole stage sideways and resets the view to podium. the
+slides one layer out and the other in; stepping between boards (`loadBoards` in
+`src/lib/leaderboards.ts`, real `GET /api/leaderboards`) slides the whole stage sideways and resets the view to podium. the
 podium is deliberately untouched design work — columns, shine sweep and sparkles are drawn as
 one SVG per plinth so the effects clip to the silhouette.
 
@@ -199,14 +200,13 @@ the list (`RankList`) shows *every* entry on the board, not a slice. rows are tr
 ranking is carried by a `.rank-bar` span behind each row whose width is `value / leader` as a
 percent (min 4%), gold-tinted for ranks 1-3. the list scrolls inside the same 392px frame under
 an "all ranks / n people" hairline header, with a 56px bottom gradient in `--black` so it
-dissolves rather than cuts. the signed-in user (`ME` from `src/lib/people.ts`, matched by name)
-is highlighted in place with a "you" pill and centred on entry by setting `scrollTop` directly
+dissolves rather than cuts. the signed-in user is highlighted in place with a "you" pill and centred on entry by setting `scrollTop` directly
 in an effect keyed on `[view, board]` — `scrollIntoView` is avoided on purpose, it scrolls the
 whole page and fights the slide transition.
 
-worth knowing: `BOARDS` currently holds exactly 8 entries per board (one per person in
-`PEOPLE`), so the list only scrolls by ~48px today. the frame, fade and centring are built for
-a longer board and were verified against a padded 28-entry board.
+boards are you + your friends only, so a board is often just you: then the "runner ups"
+button is replaced by `.board-hint` ("add friends who track <habit> to compete"). the frame,
+fade and centring are built for a longer board and were verified against a padded 28-entry board.
 
 ## backend
 
@@ -228,13 +228,46 @@ with the real card. Migration `20260909100000_account_search.sql`.
 Copying a habit: `GET /api/users/{id}/habits` (security definer rpc
 `get_user_habits`, migration `20261013120000_user_habits.sql`) returns another
 account's unarchived habits as `{name, type, goal, unit}` only. Added 2026-10-13
-at Luka's request for the new-habit dialog — it is the first and only place
-habit names leave their owner, so any signed-in user can now read what any
-account tracks. The card (`get_user_card`) still carries no habit names.
+at Luka's request for the new-habit dialog. Since 2026-10-21 it's friends only
+(see below), like the grids, leaderboards and feed. The card (`get_user_card`)
+carries no habit names and stays open to everyone.
 
-**v1 scope is users + habits + habit entries.** Friendships and leaderboards are
-not in it. Note the frontend leaderboard page still runs on the mock
-`BOARDS`/`PEOPLE` arrays; there is no server behind it.
+**Friends (2026-10-21).** LinkedIn-style: table `friendships`
+(migration `20261021120000_friendships.sql`), one row per pair (`uq_friendship_pair`
+on least/greatest of the two ids), `requester_id` → `addressee_id`, `status`
+pending | accepted. Endpoints under `/api/friends` (list, send, accept,
+decline/cancel, unfriend), all keyed by the other user's id; see `backend/README.md`.
+Sending to someone who already asked you accepts theirs. Decline, cancel and
+unfriend delete the row. RLS: both parties read and delete, only the addressee
+can update and only pending → accepted, with a column grant on
+`(status, accepted_at)` so the pair can't be rewritten. The list is the security
+definer rpc `get_friendships()`, since RLS hides the other person's `users` row.
+**Friends only, no peeking** (migration `20261021130000_friends_only.sql`, Luka's
+call: the app is about friendly competition with people you know). `my_circle()`
+= you + accepted friends; `get_leaderboards`, `get_activity`, `get_user_habits`
+and `get_user_grids` all filter on it, so each person's boards are their own.
+Search and the card stay open so you can find people to add. A pending request
+isn't a friendship.
+
+Frontend: `src/lib/friendsApi.ts` has `useFriends()` (polled every 30s under preload
+key `friends`, with a listener set so a change in one place shows everywhere),
+`relationTo()` and `changeFriendship(token, "send"|"accept"|"decline"|"unfriend", id)`.
+A 404/409 there means the screen was behind, so it just re-reads. Every change
+invalidates the leaderboards and both feed keys. **Profiles only open for friends (and yourself)**, per Luka on 2026-10-21. In the
+social tab's search, a non-friend's row is a `.result-row` (not a link) with
+"add friend", "requested" or "accept" at the end. "requested" is a
+plain `.ac-btn` with an "unrequest" tooltip, and one click withdraws the request
+with no confirmation (Luka's call). This goes through
+`AccountList`'s `action` prop, so `.results` row styles are scoped to
+`li > button` to keep the action button from being styled as a row. A friend's
+row opens `ProfileModal` as before, which has a two-step `Unfriend` that closes
+the modal when it's done. The social tab lists incoming requests above the feed (`.feed-list.requests`, not
+clipped or faded), with accept and decline; those rows don't open a profile. The nav shows a green `.nav-dot` on "social" while requests
+wait. "Join a friend" in NewHabit now picks from your friends, not all accounts.
+
+Both friends migrations were pushed to the live db on 2026-10-21. The backend and
+frontend code still has to be deployed: until it is, live has the new tables and
+friends-only rpcs, but there's no `/api/friends` and no UI for adding friends.
 
 **The split:** the browser talks to Supabase Auth *directly* for signup / login /
 refresh (`@supabase/supabase-js`). Everything else goes browser → FastAPI →

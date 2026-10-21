@@ -393,13 +393,18 @@ function Boards({ boards }: { boards: Board[] }) {
         </button>
       </div>
 
-      <button
-        className="runners"
-        type="button"
-        onClick={() => setView((v) => (v === "podium" ? "list" : "podium"))}
-      >
-        {view === "podium" ? "runner ups" : "back to podium"}
-      </button>
+      {/* boards are you and your friends, so on your own there's nobody to run up */}
+      {board.entries.length > 1 ? (
+        <button
+          className="runners"
+          type="button"
+          onClick={() => setView((v) => (v === "podium" ? "list" : "podium"))}
+        >
+          {view === "podium" ? "runner ups" : "back to podium"}
+        </button>
+      ) : (
+        <p className="board-hint">add friends who track {board.title} to compete</p>
+      )}
     </div>
   );
 }

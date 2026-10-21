@@ -3,6 +3,7 @@ import AccountList from "./AccountList";
 import SearchField from "./SearchField";
 import UserAvatar from "./UserAvatar";
 import { useAuth } from "../lib/auth";
+import { useFriends } from "../lib/friendsApi";
 import {
   PRESETS,
   RAMPS,
@@ -11,7 +12,7 @@ import {
   type HabitTemplate,
   type RampName,
 } from "../lib/habits";
-import { displayName, getUserHabits, useAccountSearch, type AccountHit } from "../lib/usersApi";
+import { displayName, getUserHabits, type AccountHit } from "../lib/usersApi";
 
 const RAMP_NAMES = Object.keys(RAMPS) as RampName[];
 
@@ -244,13 +245,12 @@ type CopyProps = {
   onPick: (template: HabitTemplate) => void;
 };
 
-/** find an account, then pick one of the habits it tracks */
+/** pick a friend, then one of the habits they track. friends only, because
+ * nobody else's habits are visible */
 function CopyFrom({ account, onAccount, taken, picked, onPick }: CopyProps) {
   const [query, setQuery] = useState("");
-  const { session, profile } = useAuth();
-  const token = session?.access_token;
-  const myId = profile && profile !== "none" ? profile.id : null;
-  const { q, results, searching } = useAccountSearch(query);
+  const token = useAuth().session?.access_token;
+  const friends = useFriends();
   // tagged with the account it answers for, so a stale answer reads as "loading";
   // `habits: null` is a failed load
   const [loaded, setLoaded] = useState<{ id: string; habits: HabitTemplate[] | null } | null>(null);
@@ -301,20 +301,26 @@ function CopyFrom({ account, onAccount, taken, picked, onPick }: CopyProps) {
     );
   }
 
-  // you can't copy from yourself
-  const others = results.filter((u) => u.id !== myId);
+  const q = query.trim().toLowerCase();
+  const matches = (friends?.friends ?? []).filter(
+    (u) => u.username.includes(q) || displayName(u).toLowerCase().includes(q),
+  );
 
   return (
     <>
       <SearchField value={query} onChange={setQuery} autoFocus />
-      {q &&
-        (searching && others.length === 0 ? (
-          <ul className="results">
-            <li className="result-empty">searching…</li>
-          </ul>
-        ) : (
-          <AccountList results={others} searching={searching} onPick={onAccount} />
-        ))}
+      <AccountList
+        results={matches}
+        searching={false}
+        onPick={onAccount}
+        empty={
+          friends === null
+            ? "loading…"
+            : friends.friends.length
+              ? "no friends match that"
+              : "no friends yet, add some from the social tab"
+        }
+      />
     </>
   );
 }
