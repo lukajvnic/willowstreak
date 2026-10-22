@@ -230,7 +230,8 @@ class _Rpc:
                 return _Response([])
             rows = sorted(
                 (h for h in self._db.tables.get("habits", [])
-                 if str(h["user_id"]) == target and h.get("archived_at") is None),
+                 if str(h["user_id"]) == target and h.get("archived_at") is None
+                 and self._db.visible(h)),
                 key=lambda h: h["created_at"],
             )
             return _Response(
@@ -242,7 +243,7 @@ class _Rpc:
             grids = []
             if target not in self._db.circle():
                 return _Response([])
-            for h in self._db.active_habits(target):
+            for h in filter(self._db.visible, self._db.active_habits(target)):
                 days = sorted(
                     (e for e in self._db.tables["habit_entries"]
                      if str(e["habit_id"]) == str(h["id"]) and lo <= str(e["entry_date"]) <= hi),
@@ -311,6 +312,7 @@ class FakeDB:
             row.setdefault("goal", None)
             row.setdefault("unit", "")
             row.setdefault("archived_at", None)
+            row.setdefault("private", False)
         if table in {"reminders", "reminder_categories"} and any(
             str(r["id"]) == str(row["id"]) for r in self.tables[table]
         ):
@@ -368,6 +370,10 @@ class FakeDB:
         rows.sort(key=lambda r: str(r["accepted_at"] or r["created_at"]), reverse=True)
         return rows
 
+    def visible(self, habit: dict) -> bool:
+        """A private habit is its owner's alone."""
+        return not habit.get("private") or str(habit["user_id"]) == str(self.current_user_id)
+
     def active_habits(self, user_id: str) -> list[dict]:
         return sorted(
             (h for h in self.tables["habits"]
@@ -401,13 +407,13 @@ class FakeDB:
         seen: set[tuple[str, str, str]] = set()
         circle = self.circle()
         for mine in self.active_habits(str(self.current_user_id)):
-            if key(mine) in seen:
+            if mine.get("private") or key(mine) in seen:
                 continue
             seen.add(key(mine))
             scores: dict[str, float] = {}
             for h in self.tables["habits"]:
-                if (h.get("archived_at") is not None or key(h) != key(mine)
-                        or str(h["user_id"]) not in circle):
+                if (h.get("archived_at") is not None or h.get("private")
+                        or key(h) != key(mine) or str(h["user_id"]) not in circle):
                     continue
                 days = self._days(h)
                 if h["type"] == "count":
@@ -437,7 +443,8 @@ class FakeDB:
             h = habits[str(e["habit_id"])]
             if (str(h["user_id"]) == str(self.current_user_id)
                     or str(h["user_id"]) not in circle
-                    or h.get("archived_at") is not None or float(e["value"]) <= 0):
+                    or h.get("archived_at") is not None or h.get("private")
+                    or float(e["value"]) <= 0):
                 continue
             rows.append({
                 "id": e["id"], **self._user_row(str(h["user_id"])),
@@ -455,11 +462,11 @@ class FakeDB:
         mine = {
             str(h["id"])
             for h in self.tables["habits"]
-            if str(h["user_id"]) == uid
+            if str(h["user_id"]) == uid and self.visible(h)
         }
         active = [
             h for h in self.tables["habits"]
-            if str(h["user_id"]) == uid and h.get("archived_at") is None
+            if str(h["user_id"]) == uid and h.get("archived_at") is None and self.visible(h)
         ]
         by_habit: dict[str, list[date]] = {}
         for e in self.tables["habit_entries"]:

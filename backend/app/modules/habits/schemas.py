@@ -14,6 +14,8 @@ class HabitData(BaseModel):
     type: HabitType
     goal: int | None = None
     unit: str = ""
+    # hidden from friends' views and from every leaderboard
+    private: bool = False
     archived_at: datetime | None = None
     created_at: datetime | None = None
 
@@ -38,6 +40,7 @@ class HabitCreateRequest(_GoalMatchesType):
     type: HabitType = HabitType.COMPLETION
     goal: int | None = Field(default=None, gt=0)
     unit: str = ""
+    private: bool = False
 
 
 class HabitUpdateRequest(BaseModel):

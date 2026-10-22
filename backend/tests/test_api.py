@@ -623,6 +623,38 @@ def test_activity_is_friends_logs_newest_first(client, sign_in, db):
     assert luka.get("/api/activity?limit=0").status_code == 422
 
 
+# ----------------------------------------------------------------- private habits
+
+def test_private_habits_are_the_owners_alone(client, sign_in, db):
+    register(client, "luka")
+    r = client.post("/api/habits", json={"name": "therapy", "type": "completion", "private": True})
+    assert r.status_code == 201 and r.json()["habit"]["private"] is True
+    secret = r.json()["habit"]["id"]
+    log(client, secret, 0)
+    log(client, make_habit(client, "gym"), 0)
+
+    sam = sign_in()
+    register(sam, "sam", first="Sam")
+    log(sam, make_habit(sam, "therapy"), 0)
+    befriend(db, client.user_id, sam.user_id)
+
+    # to sam it doesn't exist: not on the profile, the card, the feed or a board
+    week = f"from={TODAY.isoformat()}&to={TODAY.isoformat()}"
+    assert [h["name"] for h in sam.get(f"/api/users/{client.user_id}/habits").json()["habits"]] == ["gym"]
+    grids = sam.get(f"/api/users/{client.user_id}/habits?include=entries&{week}").json()["habits"]
+    assert [h["name"] for h in grids] == ["gym"]
+    assert sam.get(f"/api/users/{client.user_id}/card").json()["card"]["tracked"] == 1
+    assert [a["habit"] for a in sam.get("/api/activity").json()["activity"]] == ["gym"]
+    (board,) = boards_for(sam)
+    assert [e["user"]["username"] for e in board["entries"]] == ["sam"]
+
+    # luka still sees it everywhere that's his, but gets no board for it
+    luka = sign_in(client.user_id)
+    assert [h["name"] for h in luka.get("/api/habits").json()["habits"]] == ["therapy", "gym"]
+    assert luka.get(f"/api/users/{client.user_id}/card").json()["card"]["tracked"] == 2
+    assert [b["habit"] for b in boards_for(luka)] == ["gym"]
+
+
 # ----------------------------------------------------------------- reminders
 
 def new_reminder(**over):

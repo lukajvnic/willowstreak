@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import AccountList from "./AccountList";
 import SearchField from "./SearchField";
 import UserAvatar from "./UserAvatar";
@@ -39,6 +39,9 @@ export default function NewHabit({ mode, taken, onCreate, onClose }: Props) {
   const [unit, setUnit] = useState("");
   const [goal, setGoal] = useState("");
   const [ramp, setRamp] = useState<RampName>("moss");
+  // off friends' views and the leaderboards; works the same in every mode
+  const [hidden, setHidden] = useState(false);
+  const tipId = useId();
   // the preset or friend's habit that's selected, and whose it is
   const [picked, setPicked] = useState<HabitTemplate | null>(null);
   const [account, setAccount] = useState<AccountHit | null>(null);
@@ -88,6 +91,7 @@ export default function NewHabit({ mode, taken, onCreate, onClose }: Props) {
               name: draft.name.trim().toLowerCase(),
               meta: draft.toggle ? "yes / no" : `${draft.unit} per day`,
               ramp: RAMPS[ramp],
+              private: hidden,
             });
             onClose();
           }}
@@ -186,6 +190,31 @@ export default function NewHabit({ mode, taken, onCreate, onClose }: Props) {
             <button className="new-create" type="submit" disabled={!draft}>
               create habit
             </button>
+            <span className="new-lock-wrap">
+              <button
+                className="new-lock"
+                type="button"
+                data-active={hidden}
+                aria-describedby={tipId}
+                onClick={() => setHidden((h) => !h)}
+              >
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" strokeWidth="1.7" />
+                  <path
+                    d={hidden ? "M8 11V8a4 4 0 0 1 8 0v3" : "M8 11V8a4 4 0 0 1 7.7-1.5"}
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                {hidden ? "private" : "public"}
+              </button>
+              <span className="new-lock-tip" id={tipId} role="tooltip">
+                {hidden
+                  ? "only you see it. kept off your profile, the feed and leaderboards"
+                  : "friends see it on your profile, in the feed and on leaderboards"}
+              </span>
+            </span>
             {mode === "custom" && duplicate && (
               <span className="new-warn">you already track that</span>
             )}

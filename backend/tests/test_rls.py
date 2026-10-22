@@ -468,6 +468,20 @@ def as_user_after(setup: str, user_id: str, sql: str) -> list[str]:
     ]
 
 
+def test_private_habits_stay_with_their_owner():
+    """sam makes his gym private: luka loses it from sam's profile, card, feed
+    and his own gym board; sam still sees it on his profile but has no board."""
+    setup = f"update public.habits set private = true where id = '{B_HABIT}';"
+    assert as_user_after(setup, A, f"select count(*) from public.get_user_habits('{B}');") == ["0"]
+    assert as_user_after(setup, A, f"select count(*) from public.get_user_grids('{B}', current_date - 7, current_date);") == ["0"]
+    assert as_user_after(setup, A, f"select tracked||'/'||streak from public.get_user_card('{B}');") == ["0/0"]
+    assert as_user_after(setup, A, "select count(*) from public.get_activity(50);") == ["0"]
+    assert as_user_after(setup, A, LEADERBOARD) == ["gym//luka/5"]
+    assert as_user_after(setup, B, f"select count(*) from public.get_user_grids('{B}', current_date - 7, current_date);") == ["1"]
+    assert as_user_after(setup, B, f"select tracked from public.get_user_card('{B}');") == ["1"]
+    assert as_user_after(setup, B, LEADERBOARD) == []
+
+
 def test_strangers_are_not_on_your_boards():
     """cleo starts tracking gym too. Her request to luka is still pending, so
     she's a stranger and his gym board stays luka and sam; once he accepts,

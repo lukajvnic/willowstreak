@@ -837,6 +837,60 @@ div.today .today-line {
 .new-create:disabled { opacity: 0.3; cursor: default; }
 .new-create:not(:disabled):active { transform: translateY(1px); }
 
+/* beside create habit. open and faint while public, shut and lit while private */
+.new-lock-wrap {
+  position: relative;
+  flex: none;
+}
+
+.new-lock {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.new-lock svg { width: 16px; height: 16px; }
+.new-lock:hover { background: rgba(255, 255, 255, 0.07); color: var(--ink); }
+/* the dialog's red, as on an armed delete */
+.new-lock[data-active="true"] {
+  color: #D08A72;
+  background: rgba(208, 138, 114, 0.12);
+}
+
+/* same surface as the heatmap's day popover */
+.new-lock-tip {
+  position: absolute;
+  z-index: 5;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 210px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--dune-lift);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+/* only after a 0.5s hover; it hides straight away */
+.new-lock:hover + .new-lock-tip,
+.new-lock:focus-visible + .new-lock-tip { opacity: 1; transition-delay: 0.5s; }
+
 /* pushed to the far end, away from save. the first click only arms it */
 .new-delete {
   margin-left: auto;

@@ -10,6 +10,8 @@ export type Habit = {
   unit: string;
   /** yes/no habit — logged with a single button instead of a typed amount */
   toggle: boolean;
+  /** kept off friends' views and the leaderboards */
+  private?: boolean;
 };
 
 /** how far back the habits page looks — under a year, so the grid leaves room either side */
