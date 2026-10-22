@@ -9,6 +9,7 @@ export type ApiHabit = {
   type: "completion" | "count";
   goal: number | null;
   unit: string;
+  private?: boolean;
   entries?: ApiEntry[];
 };
 
@@ -45,6 +46,7 @@ function toUiHabit(row: ApiHabit): Habit {
     goal: toggle ? 1 : (row.goal ?? 1),
     unit: toggle ? "" : row.unit,
     toggle,
+    private: row.private ?? false,
   };
 }
 
@@ -84,12 +86,16 @@ export const loadUserGrids = (token: string, userId: string, weeks: number) =>
 
 export async function createHabit(
   token: string,
-  input: { name: string; toggle: boolean; goal: number; unit: string },
+  input: { name: string; toggle: boolean; goal: number; unit: string; private?: boolean },
 ): Promise<Habit> {
   const body = input.toggle
     ? { name: input.name, type: "completion", unit: "" }
     : { name: input.name, type: "count", goal: input.goal, unit: input.unit };
-  const res = await api("/api/habits", { method: "POST", token, body });
+  const res = await api("/api/habits", {
+    method: "POST",
+    token,
+    body: { ...body, private: input.private ?? false },
+  });
   if (!res.ok) throw new Error(`habit create failed (${res.status})`);
   return toUiHabit((res.data as { habit: ApiHabit }).habit);
 }

@@ -183,6 +183,16 @@ results come and go, which is intended. the body is a `<form>` in every mode:
 enter in the search box can't create anything because no habit is picked while
 that box is on screen.
 
+private habits (2026-10-22): a lock pill (`.new-lock`, icon + "public"/"private") sits right
+of `create habit` in all three modes — open and faint by default, shut and red while on (`#D08A72` on a tint, like an armed delete)
+(`data-active`). hovering or focusing it for 0.5s shows `.new-lock-tip` (a `transition-delay`; it hides at once), a css tooltip centred above it (the
+day popover's surface) saying who sees the habit; it replaced a native `title`. it
+sends `private: true` on create (`habits.private`, migration `20261022120000_private_habits.sql`).
+a private habit is hidden from everyone but its owner: friends don't get it in your profile
+grids, card numbers (streak/best/tracked), "join a friend", or the feed, and it's on no
+leaderboard, the owner's included (no board for it at all). your own profile still shows it.
+set at creation only for now: there's no toggle in `EditHabit` (PATCH doesn't take it either).
+
 the `join a friend` picker reuses the social tab's `SearchField` and `AccountList`,
 but since 2026-10-21 it lists your friends (`useFriends`, filtered client-side by
 the box) rather than calling `useAccountSearch`, because nobody else's habits are

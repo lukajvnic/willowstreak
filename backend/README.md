@@ -296,6 +296,10 @@ DELETE /api/habits/{id}      -> 204               (soft — entries survive)
            "type": "count", "goal": 100, "unit": "reps"}}
 ```
 
+`private` (default `false`, set on `POST` only) keeps a habit to its owner: the
+social reads skip it for everyone else, and it's on no leaderboard, its owner's
+included.
+
 `type` ∈ `completion | count`, strictly paired with `goal`: a `count` habit
 **must** have a positive goal, a `completion` habit **must not**. Violations are
 **422 `habit_goal_type_mismatch`**, and `PATCH` validates the *merged* row —
