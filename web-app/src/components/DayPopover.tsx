@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { formatAmount, formatDay, type Habit } from "../lib/habits";
+import { cleanAmount, formatAmount, formatDay, parseAmount, type Habit } from "../lib/habits";
 
 type Props = {
   habit: Habit;
@@ -57,7 +57,7 @@ export default function DayPopover({
   }, [placed]);
 
   const commit = () => {
-    onSet?.(draft === "" ? 0 : Math.max(0, Math.round(Number(draft))));
+    onSet?.(parseAmount(draft));
     onClose?.();
   };
 
@@ -90,10 +90,10 @@ export default function DayPopover({
             onFocus={(e) => e.currentTarget.select()}
             value={draft}
             placeholder="0"
-            inputMode="numeric"
-            maxLength={5}
+            inputMode="decimal"
+            maxLength={8}
             aria-label={`${habit.name} on ${formatDay(date)} in ${habit.unit}`}
-            onChange={(e) => setDraft(e.target.value.replace(/\D/g, ""))}
+            onChange={(e) => setDraft(cleanAmount(e.target.value))}
             onBlur={commit}
           />
           <span className="day-pop-unit">{habit.unit}</span>
