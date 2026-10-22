@@ -90,6 +90,8 @@ exactly the cells' width and start at the first column; the day labels hang into
 too narrow for that (phones), it falls back to the old full-width scrolling layout.
 future cells (after today) are no longer rendered at all — in every grid, profile ones too.
 
+decimal amounts (2026-10-22): the today field and the cell popover accept decimals — `cleanAmount` in `lib/habits.ts` keeps digits and one point (a comma counts as a point), two places at most; `parseAmount` reads "" and "." as 0. `formatAmount` shows up to two places with trailing zeros dropped. the backend already took decimals (`numeric` column, `Decimal` schema); goals are still whole numbers (`int`).
+
 cells (2026-10-14): hovering any cell shows `DayPopover` in `mode="tip"` — date plus "done" /
 "not done" or "25 pushups", `pointer-events: none`. clicking a past-or-today cell of a yes/no
 habit flips it straight away (no popover); of a counted habit it opens `DayPopover` in

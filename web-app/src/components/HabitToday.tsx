@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { formatAmount, type Habit } from "../lib/habits";
+import { cleanAmount, formatAmount, parseAmount, type Habit } from "../lib/habits";
 
 type Props = {
   habit: Habit;
@@ -49,7 +49,7 @@ export default function HabitToday({ habit, value, onSet }: Props) {
   }
 
   const commit = () => {
-    onSet(draft === "" ? 0 : Math.max(0, Math.round(Number(draft))));
+    onSet(parseAmount(draft));
     setEditing(false);
   };
 
@@ -69,10 +69,10 @@ export default function HabitToday({ habit, value, onSet }: Props) {
             autoFocus
             value={draft}
             placeholder="0"
-            inputMode="numeric"
-            maxLength={5}
+            inputMode="decimal"
+            maxLength={8}
             aria-label={`${habit.name} today in ${habit.unit}`}
-            onChange={(e) => setDraft(e.target.value.replace(/\D/g, ""))}
+            onChange={(e) => setDraft(cleanAmount(e.target.value))}
             onBlur={commit}
             onKeyDown={(e) => e.key === "Escape" && setEditing(false)}
           />

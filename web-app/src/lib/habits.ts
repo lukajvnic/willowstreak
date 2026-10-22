@@ -74,12 +74,20 @@ export function statsFor(days: Day[], today: number): Stats {
   return { streak, done, average: logged.reduce((sum, d) => sum + d.amount, 0) / done };
 }
 
-/** enough precision to be worth reading, never more */
+/** two decimal places at most, trailing zeros dropped — "2.5", not "2.50" */
 export function formatAmount(n: number): string {
-  if (Number.isInteger(n)) return String(n);
-  if (n >= 100) return String(Math.round(n));
-  if (n >= 10) return n.toFixed(1);
-  return n.toFixed(2);
+  return String(Math.round(n * 100) / 100);
+}
+
+/** what an amount field keeps of a keystroke: digits and one decimal point, two places at most */
+export function cleanAmount(s: string): string {
+  return s.replace(/,/g, ".").replace(/[^\d.]/g, "").match(/^\d*(\.\d{0,2})?/)![0];
+}
+
+/** "" and a lone "." both read as 0 */
+export function parseAmount(s: string): number {
+  const n = Number(s);
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
 }
 
 const MONTHS = [
