@@ -53,8 +53,8 @@ def read_stats_controller(client: Client) -> UserStatsResponse:
     return UserStatsResponse(stats=get_stats(client))
 
 
-def search_users_controller(client: Client, prefix: str) -> UserSearchResponse:
-    return UserSearchResponse(users=search_users(client, prefix))
+def search_users_controller(client: Client, query: str, limit: int) -> UserSearchResponse:
+    return UserSearchResponse(users=search_users(client, query, limit))
 
 
 def user_card_controller(client: Client, user_id: str) -> UserCardResponse:

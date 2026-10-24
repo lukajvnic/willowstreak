@@ -30,6 +30,8 @@ class FriendData(BaseModel):
     user: PublicUserData
     # when the request was accepted, or when it was sent while it's pending
     since: datetime
+    # friends you both have
+    mutual_friends: int
 
 
 class FriendsResponse(BaseModel):
@@ -38,3 +40,24 @@ class FriendsResponse(BaseModel):
     incoming: list[FriendData]
     # requests you sent, waiting on theirs
     outgoing: list[FriendData]
+
+
+class SuggestionVia(BaseModel):
+    """A friend of yours on the path to a suggestion, for its reason line."""
+
+    username: str
+    first_name: str
+    last_name: str
+
+
+class SuggestionData(BaseModel):
+    user: PublicUserData
+    # 2: a friend of a friend, 3: a friend of one of those
+    hop: int
+    # 0 past hop 2
+    mutual_friends: int
+    via: SuggestionVia
+
+
+class SuggestionsResponse(BaseModel):
+    suggestions: list[SuggestionData]

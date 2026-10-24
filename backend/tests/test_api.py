@@ -336,29 +336,51 @@ def test_plain_habit_list_carries_no_entries(client):
 
 # ----------------------------------------------------------------- account search
 
-def test_search_matches_username_prefix_only(client, sign_in):
+def test_search_matches_names_and_usernames_anywhere(client, sign_in):
     register(client, "luka")
     other = sign_in()
     register(other, "lucia", first="Lucia")
     third = sign_in()
-    register(third, "annaluka", first="Anna")  # contains but doesn't start with
+    register(third, "annaluka", first="Anna")  # contains it, doesn't start with it
+    fourth = sign_in()
+    register(fourth, "zed", first="Zed", last="Lund")  # a later name word starts with it
 
-    r = third.get("/api/users?search=lu")
+    r = fourth.get("/api/users?search=LU")
     assert r.status_code == 200
     names = [u["username"] for u in r.json()["users"]]
-    assert names == ["lucia", "luka"]
+    # name starts, then username starts (alphabetical), then the rest; never yourself
+    assert names == ["lucia", "luka", "annaluka"]
+    assert [u["username"] for u in fourth.get("/api/users?search=@luk").json()["users"]] == [
+        "luka", "annaluka",
+    ]
 
 
-def test_search_rejects_bad_characters(client):
+def test_search_ranks_friends_first_and_says_where_you_stand(client, sign_in, db):
+    register(client, "luka")
+    sam = sign_in()
+    register(sam, "samira", first="Sam", last="A")
+    sid = sign_in()
+    register(sid, "samson", first="Sam", last="B")
+    cleo = sign_in()
+    register(cleo, "samuel", first="Sam", last="C")
+    befriend(db, client.user_id, sid.user_id)
+    befriend(db, sam.user_id, sid.user_id)  # sam and luka share sid
+    cleo.post(f"/api/friends/requests/{client.user_id}")
+
+    luka = sign_in(client.user_id)
+    hits = luka.get("/api/users?search=sam").json()["users"]
+    assert [(u["username"], u["relation"], u["mutual_friends"]) for u in hits] == [
+        ("samson", "friends", 0), ("samuel", "incoming", 0), ("samira", "none", 1),
+    ]
+    assert len(luka.get("/api/users?search=sam&limit=2").json()["users"]) == 2
+
+
+def test_search_bounds(client):
     register(client)
-    assert client.get("/api/users?search=Lu%20ka").status_code == 422
-    assert client.get("/api/users?search=%25").status_code == 422
-
-
-def test_search_finds_yourself_too(client):
-    me = register(client, "solo")
-    r = client.get("/api/users?search=solo")
-    assert [u["id"] for u in r.json()["users"]] == [me["id"]]
+    assert client.get("/api/users?search=").status_code == 422
+    assert client.get("/api/users?search=" + "x" * 41).status_code == 422
+    assert client.get("/api/users?search=%25").json()["users"] == []
+    assert client.get("/api/users?search=luka&limit=21").status_code == 422
 
 
 def test_user_card_carries_profile_and_stats(client, sign_in):
@@ -935,3 +957,91 @@ def test_unfriending_takes_them_off_your_board_and_feed(client, sign_in):
     luka.delete(f"/api/friends/{sam.user_id}")
     assert [e["user"]["username"] for e in boards_for(luka)[0]["entries"]] == ["luka"]
     assert luka.get("/api/activity").json()["activity"] == []
+
+
+# ----------------------------------------------------------------- social redesign
+
+def test_requests_carry_mutual_friend_counts(client, sign_in, db):
+    register(client, "luka")
+    sam = sign_in()
+    register(sam, "sam", first="Sam")
+    cleo = sign_in()
+    register(cleo, "cleo", first="Cleo")
+    befriend(db, client.user_id, sam.user_id)
+    befriend(db, sam.user_id, cleo.user_id)
+    cleo.post(f"/api/friends/requests/{client.user_id}")
+
+    luka = sign_in(client.user_id)
+    body = luka.get("/api/friends").json()
+    assert [(f["user"]["username"], f["mutual_friends"]) for f in body["incoming"]] == [("cleo", 1)]
+    assert [(f["user"]["username"], f["mutual_friends"]) for f in body["friends"]] == [("sam", 0)]
+
+
+def test_activity_rows_carry_streaks_and_milestones(client, sign_in, db):
+    register(client, "luka")
+    sam = sign_in()
+    register(sam, "sam", first="Sam")
+    gym = make_habit(sam, "gym")
+    log(sam, gym, 9)  # a one-day run, then a gap
+    for days_ago in range(6, -1, -1):
+        log(sam, gym, days_ago)
+    befriend(db, client.user_id, sam.user_id)
+
+    luka = sign_in(client.user_id)
+    feed = {a["entry_date"]: a for a in luka.get("/api/activity").json()["activity"]}
+    today, day6 = TODAY.isoformat(), (TODAY - dt.timedelta(days=6)).isoformat()
+    day5 = (TODAY - dt.timedelta(days=5)).isoformat()
+    assert feed[today]["streak"] == 7 and feed[today]["milestone"] is True
+    assert feed[day6]["streak"] == 1 and feed[day6]["personal_best"] is False
+    # the run's second day beat the earlier one-day run
+    assert feed[day5]["streak"] == 2 and feed[day5]["personal_best"] is True
+    assert feed[today]["personal_best"] is False
+
+
+def test_suggestions_walk_the_friendship_graph(client, sign_in, db):
+    """luka - sam - eve - hal, and finn knows sam too. eve and finn are friends
+    of friends; eve also tracks gym like luka, so she wins the tie. hal is one
+    hop further out."""
+    register(client, "luka")
+    make_habit(client, "gym")
+    people = {}
+    for name in ("sam", "eve", "finn", "hal"):
+        people[name] = sign_in()
+        register(people[name], name, first=name.title(), last="X")
+    make_habit(people["eve"], "Gym")
+    ids = {name: c.user_id for name, c in people.items()}
+    befriend(db, client.user_id, ids["sam"])
+    befriend(db, ids["sam"], ids["eve"])
+    befriend(db, ids["sam"], ids["finn"])
+    befriend(db, ids["eve"], ids["hal"])
+
+    luka = sign_in(client.user_id)
+    r = luka.get("/api/friends/suggestions?limit=10")
+    assert r.status_code == 200
+    got = [(s["user"]["username"], s["hop"], s["mutual_friends"], s["via"]["username"])
+           for s in r.json()["suggestions"]]
+    assert got == [("eve", 2, 1, "sam"), ("finn", 2, 1, "sam"), ("hal", 3, 0, "sam")]
+    assert len(luka.get("/api/friends/suggestions").json()["suggestions"]) == 3
+    assert "habits" not in r.json()["suggestions"][0]["user"]
+
+
+def test_dismissed_and_requested_people_drop_out_of_suggestions(client, sign_in, db):
+    register(client, "luka")
+    people = {}
+    for name in ("sam", "eve", "finn"):
+        people[name] = sign_in()
+        register(people[name], name, first=name.title())
+    befriend(db, client.user_id, people["sam"].user_id)
+    befriend(db, people["sam"].user_id, people["eve"].user_id)
+    befriend(db, people["sam"].user_id, people["finn"].user_id)
+
+    luka = sign_in(client.user_id)
+    eve, finn = people["eve"].user_id, people["finn"].user_id
+    assert luka.post(f"/api/friends/suggestions/{eve}/dismiss").status_code == 204
+    assert luka.post(f"/api/friends/suggestions/{eve}/dismiss").status_code == 204  # again is fine
+    luka.post(f"/api/friends/requests/{finn}")
+    assert luka.get("/api/friends/suggestions").json()["suggestions"] == []
+
+    assert luka.post(f"/api/friends/suggestions/{client.user_id}/dismiss").status_code == 422
+    missing = "00000000-0000-0000-0000-000000000000"
+    assert luka.post(f"/api/friends/suggestions/{missing}/dismiss").status_code == 404

@@ -8,10 +8,13 @@ from app.modules.friends.schemas import (
     FriendshipData,
     FriendshipStatus,
     FriendsResponse,
+    SuggestionData,
+    SuggestionVia,
 )
 from app.modules.users.schemas import PublicUserData
 
 FRIENDSHIPS_TABLE = "friendships"
+DISMISSALS_TABLE = "suggestion_dismissals"
 POSTGRES_UNIQUE_VIOLATION = "23505"
 POSTGRES_FOREIGN_KEY_VIOLATION = "23503"
 
@@ -31,11 +34,14 @@ def list_friends(client: Client) -> FriendsResponse:
     result = FriendsResponse(friends=[], incoming=[], outgoing=[])
     for row in response.data or []:
         user = PublicUserData.model_validate({**row, "id": row["user_id"]})
+        mutual = row["mutual_friends"]
         if row["status"] == FriendshipStatus.ACCEPTED:
-            result.friends.append(FriendData(user=user, since=row["accepted_at"]))
+            result.friends.append(
+                FriendData(user=user, since=row["accepted_at"], mutual_friends=mutual)
+            )
         else:
             bucket = result.incoming if row["incoming"] else result.outgoing
-            bucket.append(FriendData(user=user, since=row["created_at"]))
+            bucket.append(FriendData(user=user, since=row["created_at"], mutual_friends=mutual))
     return result
 
 
@@ -140,3 +146,50 @@ def remove_friend(client: Client, user_id: str, other_id: str) -> None:
             code="friend_not_found",
             message="Friend not found",
         )
+
+
+def list_suggestions(client: Client, limit: int) -> list[SuggestionData]:
+    """People you may know, nearest on the friendship graph first. The graph
+    walk and the ranking are SQL (get_suggestions); this only shapes rows."""
+    try:
+        response = client.rpc("get_suggestions", {"p_limit": limit}).execute()
+    except APIError as exc:
+        raise _failed("suggestions_failed", "Suggestions could not be loaded") from exc
+
+    return [
+        SuggestionData(
+            user=PublicUserData.model_validate(row),
+            hop=row["hop"],
+            mutual_friends=row["mutual_friends"],
+            via=SuggestionVia(
+                username=row["via_username"],
+                first_name=row["via_first_name"],
+                last_name=row["via_last_name"],
+            ),
+        )
+        for row in (response.data or [])
+    ]
+
+
+def dismiss_suggestion(client: Client, user_id: str, other_id: str) -> None:
+    """Keeps them out of your suggestions for good. Dismissing twice is fine."""
+    if user_id == other_id:
+        raise ApiError(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            code="cannot_dismiss_yourself",
+            message="You can't dismiss yourself",
+        )
+    try:
+        client.table(DISMISSALS_TABLE).insert(
+            {"user_id": user_id, "dismissed_id": other_id}
+        ).execute()
+    except APIError as exc:
+        if exc.code == POSTGRES_UNIQUE_VIOLATION:
+            return
+        if exc.code == POSTGRES_FOREIGN_KEY_VIOLATION:
+            raise ApiError(
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="user_not_found",
+                message="User not found",
+            ) from exc
+        raise _failed("dismiss_failed", "The suggestion could not be dismissed") from exc

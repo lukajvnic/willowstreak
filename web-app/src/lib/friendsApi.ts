@@ -11,11 +11,14 @@ export type Friends = {
   incoming: AccountHit[];
   /** requests you sent, waiting on theirs */
   outgoing: AccountHit[];
+  /** friends you share with each of the above, by their id */
+  mutual: Record<string, number>;
 };
 
 export type Relation = "friends" | "incoming" | "outgoing" | "none";
 
-type ApiFriends = Record<keyof Friends, { user: AccountHit }[]>;
+type Bucket = "friends" | "incoming" | "outgoing";
+type ApiFriends = Record<Bucket, { user: AccountHit; mutual_friends: number }[]>;
 
 const POLL_MS = 30_000;
 
@@ -23,10 +26,12 @@ export async function loadFriends(token: string): Promise<Friends> {
   const res = await api("/api/friends", { token });
   if (!res.ok) throw new Error(`friends load failed (${res.status})`);
   const data = res.data as ApiFriends;
+  const all = [...data.friends, ...data.incoming, ...data.outgoing];
   return {
     friends: data.friends.map((f) => f.user),
     incoming: data.incoming.map((f) => f.user),
     outgoing: data.outgoing.map((f) => f.user),
+    mutual: Object.fromEntries(all.map((f) => [f.user.id, f.mutual_friends])),
   };
 }
 
@@ -70,7 +75,7 @@ export function useFriends(): Friends | null {
   return friends;
 }
 
-type Change = "send" | "accept" | "decline" | "unfriend";
+export type Change = "send" | "accept" | "decline" | "unfriend";
 
 const CHANGES: Record<Change, (id: string) => [string, string]> = {
   send: (id) => ["POST", `/api/friends/requests/${id}`],
@@ -97,4 +102,36 @@ export async function changeFriendship(token: string, change: Change, id: string
   invalidate(KEYS.bubbles);
   invalidate(KEYS.friends);
   await pull(token).catch((err) => console.error("friends load failed", err));
+}
+
+/** someone you may know, and the friend of yours that connects you */
+export type Suggestion = {
+  user: AccountHit;
+  /** 2: a friend of a friend, 3: one of their friends */
+  hop: number;
+  mutual: number;
+  via: { username: string; first_name: string; last_name: string };
+};
+
+type ApiSuggestion = Omit<Suggestion, "mutual"> & { mutual_friends: number };
+
+/** nearest on the friendship graph first; see get_suggestions() */
+export async function loadSuggestions(token: string, limit: number): Promise<Suggestion[]> {
+  const res = await api(`/api/friends/suggestions?limit=${limit}`, { token });
+  if (!res.ok) throw new Error(`suggestions load failed (${res.status})`);
+  return (res.data as { suggestions: ApiSuggestion[] }).suggestions.map(
+    ({ mutual_friends, ...s }) => ({ ...s, mutual: mutual_friends }),
+  );
+}
+
+/** keeps them out of your suggestions for good */
+export async function dismissSuggestion(token: string, id: string): Promise<void> {
+  const res = await api(`/api/friends/suggestions/${id}/dismiss`, { method: "POST", token });
+  if (!res.ok && res.status !== 404) throw new Error(`dismiss failed (${res.status})`);
+}
+
+/** "no mutual friends", "1 mutual friend", "3 mutual friends" */
+export function mutualText(n: number): string {
+  if (n === 0) return "no mutual friends";
+  return n === 1 ? "1 mutual friend" : `${n} mutual friends`;
 }

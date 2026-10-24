@@ -56,7 +56,7 @@ class UserResponse(BaseModel):
 
 
 class PublicUserData(BaseModel):
-    """What search_users() returns — the fields anyone may see."""
+    """The fields anyone may see."""
 
     id: UUID
     username: str
@@ -66,8 +66,25 @@ class PublicUserData(BaseModel):
     avatar_path: str | None = None
 
 
+class Relation(StrEnum):
+    FRIENDS = "friends"
+    # they asked you
+    INCOMING = "incoming"
+    # you asked them
+    OUTGOING = "outgoing"
+    NONE = "none"
+
+
+class PersonHitData(PublicUserData):
+    """search_people(): an account plus where you stand with them, so the
+    result can carry the right add / requested / accept / friends action."""
+
+    relation: Relation
+    mutual_friends: int
+
+
 class UserSearchResponse(BaseModel):
-    users: list[PublicUserData]
+    users: list[PersonHitData]
 
 
 class UserCardData(PublicUserData):

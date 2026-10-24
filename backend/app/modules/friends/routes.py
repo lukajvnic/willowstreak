@@ -1,19 +1,26 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from supabase import Client
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.dependencies import get_current_user_client
 from app.modules.friends.controller import (
     accept_request_controller,
+    dismiss_suggestion_controller,
     list_friends_controller,
+    list_suggestions_controller,
     remove_friend_controller,
     remove_request_controller,
     send_request_controller,
 )
-from app.modules.friends.schemas import FriendshipResponse, FriendshipStatus, FriendsResponse
+from app.modules.friends.schemas import (
+    FriendshipResponse,
+    FriendshipStatus,
+    FriendsResponse,
+    SuggestionsResponse,
+)
 
 router = APIRouter()
 
@@ -69,4 +76,22 @@ def remove_friend(
     client: Annotated[Client, Depends(get_current_user_client)],
 ) -> Response:
     remove_friend_controller(current_user=current_user, client=client, user_id=str(user_id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/friends/suggestions", response_model=SuggestionsResponse)
+def list_suggestions(
+    client: Annotated[Client, Depends(get_current_user_client)],
+    limit: Annotated[int, Query(ge=1, le=20)] = 3,
+) -> SuggestionsResponse:
+    return list_suggestions_controller(client=client, limit=limit)
+
+
+@router.post("/friends/suggestions/{user_id}/dismiss", status_code=status.HTTP_204_NO_CONTENT)
+def dismiss_suggestion(
+    user_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    client: Annotated[Client, Depends(get_current_user_client)],
+) -> Response:
+    dismiss_suggestion_controller(current_user=current_user, client=client, user_id=str(user_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -78,9 +78,11 @@ def check_username(
 @router.get("/users", response_model=UserSearchResponse)
 def search_accounts(
     client: Annotated[Client, Depends(get_current_user_client)],
-    search: Annotated[str, Query(min_length=1, max_length=20, pattern=r"^[a-z0-9_]+$")],
+    # a name or a username, any case; a leading @ is ignored
+    search: Annotated[str, Query(min_length=1, max_length=40)],
+    limit: Annotated[int, Query(ge=1, le=20)] = 6,
 ) -> UserSearchResponse:
-    return search_users_controller(client=client, prefix=search)
+    return search_users_controller(client=client, query=search, limit=limit)
 
 
 @router.get("/users/{user_id}/card", response_model=UserCardResponse)

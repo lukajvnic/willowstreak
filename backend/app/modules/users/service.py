@@ -8,9 +8,9 @@ from supabase import Client
 
 from app.core.errors import ApiError
 from app.modules.users.schemas import (
+    PersonHitData,
     PublicGridData,
     PublicHabitData,
-    PublicUserData,
     UserCardData,
     UserCreateRequest,
     UserData,
@@ -149,18 +149,19 @@ def get_stats(client: Client) -> UserStats:
     return UserStats.model_validate(rows[0])
 
 
-def search_users(client: Client, prefix: str) -> list[PublicUserData]:
-    """Startswith match on username via a security-definer RPC — RLS hides
-    every row but the caller's, and the function returns only public fields."""
+def search_users(client: Client, query: str, limit: int) -> list[PersonHitData]:
+    """Name or username via a security-definer RPC — RLS hides every row but
+    the caller's, and the function returns only public fields. It also does
+    the ranking, since the result is cut to `limit`."""
     try:
-        response = client.rpc("search_users", {"p_prefix": prefix}).execute()
+        response = client.rpc("search_people", {"p_query": query, "p_limit": limit}).execute()
     except APIError as exc:
         raise ApiError(
             status_code=status.HTTP_502_BAD_GATEWAY,
             code="user_search_failed",
             message="Accounts could not be searched",
         ) from exc
-    return [PublicUserData.model_validate(row) for row in (response.data or [])]
+    return [PersonHitData.model_validate(row) for row in (response.data or [])]
 
 
 def get_user_card(client: Client, user_id: str) -> UserCardData:
