@@ -75,6 +75,25 @@ language sql immutable as $$
 $$;
 grant usage on schema storage to authenticated;
 grant select, insert, update, delete on storage.objects to authenticated;
+
+-- just enough of Supabase Realtime for the feed ping: the broadcast table,
+-- the topic the server sets while it checks a subscriber, and send()
+create schema if not exists realtime;
+create table if not exists realtime.messages (
+  id bigserial primary key, topic text not null, extension text not null,
+  payload jsonb, event text, private boolean default false
+);
+alter table realtime.messages enable row level security;
+create or replace function realtime.topic() returns text language sql stable as $$
+  select nullif(current_setting('realtime.topic', true), '')
+$$;
+create or replace function realtime.send(payload jsonb, event text, topic text, private boolean default true)
+returns void language sql as $$
+  insert into realtime.messages (payload, event, topic, private, extension)
+  values (payload, event, topic, private, 'broadcast')
+$$;
+grant usage on schema realtime to authenticated;
+grant select on realtime.messages to authenticated;
 """
 
 SEED = f"""
@@ -164,7 +183,7 @@ def as_user(user_id: str, sql: str) -> str:
 
 # psql echoes a status tag for every statement (BEGIN, SET, ROLLBACK, UPDATE 0
 # ...). Strip them so a query's value is what comes back.
-_TAGS = re.compile(r"^(BEGIN|COMMIT|ROLLBACK|SET|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$")
+_TAGS = re.compile(r"^(BEGIN|COMMIT|ROLLBACK|SET|RESET|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$")
 
 
 def scalar(user_id: str, sql: str) -> str:
@@ -261,6 +280,10 @@ def test_helper_functions_are_not_callable_anonymously():
         "public.get_activity(integer)",
         "public.get_friendships()",
         "public.my_circle()",
+        "public.friend_pairs()",
+        "public.search_people(text, integer)",
+        "public.get_suggestions(integer)",
+        "public.ping_friends_feed()",
     ):
         granted = _psql(DB, f"select has_function_privilege('anon', '{fn}', 'execute');")
         assert granted.strip() == "f", f"anon can execute {fn}"
@@ -497,3 +520,171 @@ def test_strangers_are_not_on_your_boards():
     accept = ("update public.friendships set status = 'accepted', accepted_at = now() "
               f"where {CLEO_ASKED_LUKA};")
     assert sorted(as_user_after(setup, A, accept + board)) == ["cleo", "luka", "sam"]
+
+
+# ----------------------------------------------------------------- social redesign
+
+E = "55555555-5555-5555-5555-555555555555"
+F = "66666666-6666-6666-6666-666666666666"
+G = "77777777-7777-7777-7777-777777777777"
+H = "88888888-8888-8888-8888-888888888888"
+
+# four more accounts, no friendships yet
+PEOPLE = (
+    f"insert into auth.users values ('{E}','e@x.com'), ('{F}','f@x.com'), "
+    f"('{G}','g@x.com'), ('{H}','h@x.com'); "
+    "insert into public.users (id, username, first_name, last_name) values "
+    f"('{E}','eve','Eve','K'), ('{F}','finn','Finn','O'), "
+    f"('{G}','gus','Gus','T'), ('{H}','hal','Hal','W'); "
+)
+
+
+def befriend(*pairs: tuple[str, str]) -> str:
+    values = ", ".join(f"('{a}','{b}','accepted', now())" for a, b in pairs)
+    return ("insert into public.friendships (requester_id, addressee_id, status, accepted_at) "
+            f"values {values}; ")
+
+
+SEARCH = "select username||'/'||relation||'/'||mutual_friends from public.search_people('{}', 6);"
+
+
+def test_search_matches_names_and_usernames_in_any_case():
+    assert rows(A, SEARCH.format("SA")) == ["sam/friends/0"]
+    assert rows(A, SEARCH.format("cleo m")) == ["cleo/incoming/0"]
+    assert rows(C, SEARCH.format("@Luk")) == ["luka/outgoing/0"]
+    # never yourself, and % is just a character
+    assert rows(A, SEARCH.format("luka")) == []
+    assert rows(A, SEARCH.format("%")) == []
+    assert rows(A, SEARCH.format("   ")) == []
+
+
+def test_search_ranks_name_starts_first():
+    """'da': a name that starts with it, a name word that does, a username that
+    does, then one that only contains it."""
+    setup = PEOPLE + (
+        f"update public.users set first_name = 'Dana', last_name = 'X' where id = '{E}'; "
+        f"update public.users set first_name = 'Rae', last_name = 'Dalton' where id = '{F}'; "
+        f"update public.users set username = 'dave', first_name = 'Ed', last_name = 'Ward' where id = '{G}'; "
+        f"update public.users set first_name = 'Linda', last_name = 'Q' where id = '{H}'; "
+    )
+    out = as_user_after(setup, A, "select username from public.search_people('da', 6);")
+    assert out == ["eve", "finn", "dave", "hal"]
+    assert as_user_after(setup, A, "select count(*) from public.search_people('da', 2);") == ["2"]
+
+
+def test_search_puts_friends_first_within_a_tier():
+    setup = PEOPLE + befriend((A, G)) + (
+        f"update public.users set first_name = 'Gale' where id = '{E}'; "
+    )
+    out = as_user_after(setup, A, "select username from public.search_people('g', 6);")
+    assert out == ["gus", "eve"]
+
+
+def test_requests_and_search_count_mutual_friends():
+    """cleo's request is still pending, but she and luka both know sam."""
+    setup = befriend((B, C))
+    shape = "select username||'/'||mutual_friends from public.get_friendships();"
+    assert sorted(as_user_after(setup, A, shape)) == ["cleo/1", "sam/0"]
+    assert as_user_after(setup, A, SEARCH.format("cleo")) == ["cleo/incoming/1"]
+
+
+SUGGEST = ("select username||'/'||hop||'/'||mutual_friends||'/'||via_username "
+           "from public.get_suggestions(10);")
+
+
+def test_suggestions_come_from_the_friendship_graph():
+    """luka's friends are sam and gus. eve knows both of them, finn knows sam,
+    hal knows eve. dev is only connected through cleo, whose request to luka is
+    still pending, so he's nowhere near."""
+    setup = PEOPLE + befriend((A, G), (B, E), (G, E), (B, F), (E, H))
+    assert as_user_after(setup, A, SUGGEST) == [
+        "eve/2/2/sam", "finn/2/1/sam", f"hal/3/0/{'sam' if B < G else 'gus'}",
+    ]
+
+
+def test_suggestions_skip_requests_and_dismissals():
+    setup = PEOPLE + befriend((B, E), (B, F)) + (
+        f"insert into public.friendships (requester_id, addressee_id) values ('{A}','{E}'); "
+        f"insert into public.suggestion_dismissals (user_id, dismissed_id) values ('{A}','{F}'); "
+    )
+    assert as_user_after(setup, A, SUGGEST) == []
+
+
+def test_shared_habits_break_ties_but_stay_hidden():
+    """eve and finn are both one mutual friend away; finn tracks gym like luka."""
+    finn_gym = "ffff0000-0000-0000-0000-00000000000f"
+    setup = PEOPLE + befriend((B, E), (B, F)) + (
+        f"insert into public.habits (id, user_id, name, type) values ('{finn_gym}','{F}','Gym','completion'); "
+    )
+    assert as_user_after(setup, A, "select username from public.get_suggestions(10);") == ["finn", "eve"]
+    columns = _psql(DB, "select string_agg(a, ',') from unnest("
+                        "(select proargnames from pg_proc where proname='get_suggestions')) a;")
+    assert "habit" not in columns
+
+
+def test_dismissals_belong_to_their_owner():
+    setup = PEOPLE + (
+        f"insert into public.suggestion_dismissals (user_id, dismissed_id) values ('{A}','{F}'); "
+    )
+    count = "select count(*) from public.suggestion_dismissals;"
+    assert as_user_after(setup, A, count) == ["1"]
+    assert as_user_after(setup, B, count) == ["0"]
+    out = as_user_after(PEOPLE, B, "insert into public.suggestion_dismissals (user_id, dismissed_id) "
+                                   f"values ('{A}','{E}');")
+    assert any("row-level security" in line for line in out)
+
+
+FEED = ("select (entry_date - current_date)||'/'||streak||'/'||milestone||'/'||personal_best "
+        "from public.get_activity(50) order by entry_date;")
+
+
+def test_feed_rows_carry_their_streak():
+    """sam logged today and yesterday: a 2-day run, no milestone, no record."""
+    assert rows(A, FEED) == ["-1/1/false/false", "0/2/false/false"]
+
+
+def test_feed_marks_milestones_and_personal_bests():
+    """a one-day run three days back makes today's 2-day streak a new best."""
+    setup = (f"insert into public.habit_entries (habit_id, entry_date, value) "
+             f"values ('{B_HABIT}', current_date - 3, 1);")
+    assert as_user_after(setup, A, FEED) == [
+        "-3/1/false/false", "-1/1/false/false", "0/2/false/true",
+    ]
+    week = (f"insert into public.habit_entries (habit_id, entry_date, value) "
+            f"select '{B_HABIT}', current_date - g, 1 from generate_series(2, 6) g;")
+    assert as_user_after(week, A, FEED)[-1] == "0/7/true/false"
+
+
+PINGS = "reset role; select topic||'/'||(payload ? 'entry_id') from realtime.messages;"
+
+
+def test_logging_pings_each_friends_feed_topic():
+    """sam logs a day: luka, his only friend, gets a ping on his own topic."""
+    log = (f"insert into public.habit_entries (habit_id, entry_date, value) "
+           f"values ('{B_HABIT}', current_date - 20, 1); ")
+    assert rows(B, log + PINGS) == [f"feed:{A}/true"]
+
+
+def test_no_ping_for_private_habits_zero_values_or_unchanged_logs():
+    zero = (f"insert into public.habit_entries (habit_id, entry_date, value) "
+            f"values ('{B_HABIT}', current_date - 20, 0); ")
+    assert rows(B, zero + PINGS) == []
+    same = f"update public.habit_entries set value = 1 where habit_id = '{B_HABIT}'; "
+    assert rows(B, same + PINGS) == []
+    more = f"update public.habit_entries set value = 2 where habit_id = '{B_HABIT}' and entry_date = current_date; "
+    assert rows(B, more + PINGS) == [f"feed:{A}/true"]
+    private = f"update public.habits set private = true where id = '{B_HABIT}';"
+    log = (f"insert into public.habit_entries (habit_id, entry_date, value) "
+           f"values ('{B_HABIT}', current_date - 20, 1); ")
+    assert as_user_after(private, B, log + PINGS) == []
+
+
+def test_only_you_can_listen_on_your_feed_topic():
+    setup = (f"insert into realtime.messages (topic, extension, payload) values "
+             f"('feed:{A}', 'broadcast', '{{}}'), ('feed:{B}', 'broadcast', '{{}}');")
+    # Realtime sets the topic it's checking and asks whether the subscriber can
+    # read anything under it, so the policy is on the topic, not the row
+    listen = "set local realtime.topic = 'feed:{}'; select count(*) > 0 from realtime.messages;"
+    assert as_user_after(setup, A, listen.format(A)) == ["t"]
+    assert as_user_after(setup, A, listen.format(B)) == ["f"]
+    assert as_user_after(setup, B, listen.format(B)) == ["t"]

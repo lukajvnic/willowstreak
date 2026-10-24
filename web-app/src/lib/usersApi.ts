@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { useAuth, type Profile } from "./auth";
 import type { AvatarOwner } from "./avatarKit";
+import type { Relation } from "./friendsApi";
 import type { HabitTemplate } from "./habits";
 
 /** the public face of an account — what search, leaderboards and the feed all
@@ -51,20 +52,26 @@ export function stubOf(u: AccountHit | Profile): PersonStub {
   };
 }
 
-/** username-prefix search. `prefix` must already be sanitized to [a-z0-9_]. */
-export async function searchUsers(token: string, prefix: string): Promise<AccountHit[]> {
-  const res = await api(`/api/users?search=${encodeURIComponent(prefix)}`, { token });
+/** a search hit: an account plus where you stand with them */
+export type PersonHit = AccountHit & {
+  relation: Relation;
+  mutual_friends: number;
+};
+
+/** name or username, anywhere in it, any case. the server ranks and cuts it */
+export async function searchUsers(token: string, query: string, limit = 6): Promise<PersonHit[]> {
+  const res = await api(`/api/users?search=${encodeURIComponent(query)}&limit=${limit}`, { token });
   if (!res.ok) throw new Error(`search failed (${res.status})`);
-  return (res.data as { users: AccountHit[] }).users;
+  return (res.data as { users: PersonHit[] }).users;
 }
 
-/** debounced account search for a search box. `q` is what actually gets sent —
- * usernames are [a-z0-9_], so the typed query collapses to that first. */
+/** debounced account search for a search box. `q` is what actually gets sent:
+ * trimmed, with a leading @ dropped, lowercased so it can be highlighted */
 export function useAccountSearch(query: string) {
   const token = useAuth().session?.access_token;
-  const [results, setResults] = useState<AccountHit[]>([]);
+  const [results, setResults] = useState<PersonHit[]>([]);
   const [searching, setSearching] = useState(false);
-  const q = query.trim().toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20);
+  const q = query.trim().replace(/^@+/, "").trim().toLowerCase().slice(0, 40);
 
   useEffect(() => {
     if (!q || !token) {
@@ -72,14 +79,19 @@ export function useAccountSearch(query: string) {
       setSearching(false);
       return;
     }
+    let stale = false;
     setSearching(true);
     const timer = setTimeout(() => {
       searchUsers(token, q)
-        .then(setResults)
-        .catch(() => setResults([]))
-        .finally(() => setSearching(false));
+        .then((hits) => !stale && setResults(hits))
+        .catch(() => !stale && setResults([]))
+        .finally(() => !stale && setSearching(false));
     }, 200); // debounce — one request per pause, not per keystroke
-    return () => clearTimeout(timer);
+    return () => {
+      // a slower answer to an older query must not land over a newer one
+      stale = true;
+      clearTimeout(timer);
+    };
   }, [q, token]);
 
   return { q, results, searching };

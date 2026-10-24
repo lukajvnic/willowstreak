@@ -1,19 +1,17 @@
 import { useEffect, useState } from "react";
-import AccountList from "./AccountList";
 import ProfileModal from "./ProfileModal";
-import SearchField from "./SearchField";
+import { ArrowUpIcon, FlameIcon } from "./SocialIcons";
+import SocialSearch from "./SocialSearch";
+import { FriendRequests, PeopleYouMayKnow } from "./SocialSide";
 import UserAvatar from "./UserAvatar";
-import { useActivity } from "../lib/activityApi";
 import { useAuth } from "../lib/auth";
-import { changeFriendship, relationTo, useFriends } from "../lib/friendsApi";
-import { FEED_SIZE } from "../lib/pageData";
-import { displayName, stubOf, useAccountSearch, type AccountHit, type PersonStub } from "../lib/usersApi";
+import { changeFriendship, useFriends, type Change } from "../lib/friendsApi";
+import { useLiveFeed } from "../lib/liveFeed";
+import type { PersonStub } from "../lib/usersApi";
 
 function ago(ms: number) {
-  const s = Math.floor(ms / 1000);
-  if (s < 10) return "now";
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
+  const m = Math.floor(ms / 60_000);
+  if (m < 1) return "just now";
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
@@ -21,165 +19,90 @@ function ago(ms: number) {
 }
 
 export default function Social() {
-  const [query, setQuery] = useState("");
-  const { q, results, searching } = useAccountSearch(query);
   const [selected, setSelected] = useState<PersonStub | null>(null);
-  const events = useActivity(FEED_SIZE);
+  const { items, waiting, showNew } = useLiveFeed();
   const friends = useFriends();
-  const { session, profile } = useAuth();
-  const token = session?.access_token;
-  const myId = profile && profile !== "none" ? profile.id : null;
-  // the requests being sent or answered, so a double click doesn't do it twice
+  const token = useAuth().session?.access_token;
+  // the people being added or answered, so a double click doesn't do it twice
   const [answering, setAnswering] = useState<string[]>([]);
   const [now, setNow] = useState(() => Date.now());
 
-  const answer = (id: string, what: "send" | "accept" | "decline") => {
+  const act = (id: string, change: Change) => {
     if (!token) return;
     setAnswering((ids) => [...ids, id]);
-    changeFriendship(token, what, id)
+    changeFriendship(token, change, id)
       .catch((err) => console.error(err))
       .finally(() => setAnswering((ids) => ids.filter((x) => x !== id)));
   };
+  const busy = (id: string) => answering.includes(id);
 
-  const incoming = friends?.incoming ?? [];
-
-  // only friends (and you) have a profile to open; everyone else gets a button
-  const canOpen = (u: AccountHit) =>
-    u.id === myId || (friends !== null && relationTo(friends, u.id) === "friends");
-
-  const friendAction = (u: AccountHit) => {
-    if (!friends || canOpen(u)) return null;
-    const relation = relationTo(friends, u.id);
-    if (relation === "outgoing") {
-      return (
-        <button
-          className="ac-btn"
-          type="button"
-          title="unrequest"
-          disabled={answering.includes(u.id)}
-          onClick={() => answer(u.id, "decline")}
-        >
-          requested
-        </button>
-      );
-    }
-    const accept = relation === "incoming";
-    return (
-      <button
-        className="ac-btn"
-        data-key
-        type="button"
-        disabled={answering.includes(u.id)}
-        onClick={() => answer(u.id, accept ? "accept" : "send")}
-      >
-        {accept ? "accept" : "add friend"}
-      </button>
-    );
-  };
-
-  // timestamps stay honest between polls
+  // "3h ago" stays honest between re-reads
   useEffect(() => {
-    const clock = setInterval(() => setNow(Date.now()), 1000);
+    const clock = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(clock);
   }, []);
 
   return (
     <div className="social">
-      <div className="search-wrap">
-        <SearchField value={query} onChange={setQuery} />
-      </div>
+      <SocialSearch friends={friends} act={act} busy={busy} onOpen={setSelected} />
 
-      {q ? (
-        <div className="feed">
-          <div className="feed-head">
-            <span className="feed-title">accounts</span>
-            <span className="feed-count">
-              {searching ? "searching…" : `${results.length} ${results.length === 1 ? "match" : "matches"}`}
+      <div className="social-cols">
+        {/* first in the markup so it stacks above the feed once the row wraps */}
+        <aside className="social-side" aria-label="friends">
+          <FriendRequests friends={friends} act={act} busy={busy} />
+          <PeopleYouMayKnow friends={friends} act={act} busy={busy} />
+        </aside>
+
+        <section className="social-feed" aria-labelledby="feed-title">
+          <div className="social-feed-head">
+            <h2 id="feed-title">recent activity</h2>
+            <span className="live">
+              <i /> live
             </span>
           </div>
 
-          <AccountList
-            results={results}
-            searching={searching}
-            onPick={(hit) => {
-              if (!canOpen(hit)) return;
-              setSelected(stubOf(hit));
-              setQuery("");
-            }}
-            action={friendAction}
-          />
-        </div>
-      ) : (
-        <>
-          {incoming.length > 0 && (
-            <div className="feed">
-              <div className="feed-head">
-                <span className="feed-title">friend requests</span>
-                <span className="feed-count">{incoming.length}</span>
-              </div>
-
-              <ul className="feed-list requests">
-                {incoming.map((u) => (
-                  <li className="feed-item" key={u.id}>
-                    <UserAvatar user={u} size={30} />
-                    <span className="feed-text">
-                      <strong>{displayName(u) || u.username}</strong> wants to be friends
-                    </span>
-                    <button
-                      className="ac-btn"
-                      data-key
-                      type="button"
-                      disabled={answering.includes(u.id)}
-                      onClick={() => answer(u.id, "accept")}
-                    >
-                      accept
-                    </button>
-                    <button
-                      className="ac-btn"
-                      type="button"
-                      disabled={answering.includes(u.id)}
-                      onClick={() => answer(u.id, "decline")}
-                    >
-                      decline
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
+          {waiting > 0 && (
+            <button className="feed-new" type="button" onClick={showNew}>
+              <ArrowUpIcon />
+              {waiting} new {waiting === 1 ? "update" : "updates"}
+            </button>
           )}
 
-          <div className="feed">
-            <div className="feed-head">
-              <span className="feed-title">recent activity</span>
-              <span className="live">
-                <i /> live
-              </span>
-            </div>
+          {items?.length === 0 && (
+            <p className="feed-empty">
+              {friends?.friends.length === 0
+                ? "add friends to see what they're logging"
+                : "your friends haven't logged anything yet"}
+            </p>
+          )}
 
+          {items && items.length > 0 && (
             <ul className="feed-list">
-              {events?.length === 0 && (
-                <li className="result-empty">
-                  {friends?.friends.length === 0
-                    ? "add friends to see what they're logging"
-                    : "your friends haven't logged anything yet"}
-                </li>
-              )}
               {/* the feed is friends only, so everyone in it has a profile to open */}
-              {events?.map((e) => (
-                <li key={e.id}>
-                  <button className="feed-item" type="button" onClick={() => setSelected(e.person)}>
-                    <UserAvatar user={e.person} size={30} />
-                    <span className="feed-text">
-                      <strong>{e.person.name}</strong> {e.text}!
+              {items.map((a) => (
+                <li key={a.id} data-milestone={a.milestone || undefined}>
+                  <button className="feed-row" type="button" onClick={() => setSelected(a.person)}>
+                    <UserAvatar user={a.person} size={40} />
+                    <span className="feed-row-body">
+                      <span className="feed-row-what">
+                        <strong>{a.person.name}</strong>
+                        <span>{a.verb}</span>
+                        <span className="habit-chip">{a.habit}</span>
+                      </span>
+                      <span className="feed-row-meta">
+                        <FlameIcon />
+                        <span>{a.personalBest ? "new personal best" : `${a.streak}-day streak`}</span>
+                        <span aria-hidden>·</span>
+                        <span>{ago(now - a.at)}</span>
+                      </span>
                     </span>
-                    <span className="feed-time">{ago(now - e.at)}</span>
                   </button>
                 </li>
               ))}
             </ul>
-          </div>
-        </>
-      )}
+          )}
+        </section>
+      </div>
 
       {selected && <ProfileModal person={selected} onClose={() => setSelected(null)} />}
     </div>

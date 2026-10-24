@@ -193,7 +193,7 @@ grids, card numbers (streak/best/tracked), "join a friend", or the feed, and it'
 leaderboard, the owner's included (no board for it at all). your own profile still shows it.
 set at creation only for now: there's no toggle in `EditHabit` (PATCH doesn't take it either).
 
-the `join a friend` picker reuses the social tab's `SearchField` and `AccountList`,
+the `join a friend` picker uses the account search pill `SearchField` and `AccountList`,
 but since 2026-10-21 it lists your friends (`useFriends`, filtered client-side by
 the box) rather than calling `useAccountSearch`, because nobody else's habits are
 visible. once an account is picked the search pill is reused as a chip showing
@@ -231,11 +231,12 @@ full endpoint reference in `backend/README.md`.
 embedded (PostgREST embedded select, one round trip) — that's the habits-page
 load path; the per-habit entries route stays for single-habit use.
 
-Account search: `GET /api/users?search=<prefix>` (username startswith, security
-definer rpc `search_users`) and `GET /api/users/{id}/card` (public profile +
-streak/best/tracked via `get_user_card`, deliberately no habit names/entries).
-Social tab's search box is wired to these; clicking a hit opens ProfileModal
-with the real card. Migration `20260909100000_account_search.sql`.
+Account search: `GET /api/users?search=<q>&limit=6` (name or username, any case,
+anywhere; security definer rpc `search_people`, which ranks server-side and
+returns `relation` + `mutual_friends`; since 2026-10-23, before that it was
+username-prefix `search_users`, which is still in the db for the old backend) and
+`GET /api/users/{id}/card` (public profile + streak/best/tracked via
+`get_user_card`, deliberately no habit names/entries).
 
 Copying a habit: `GET /api/users/{id}/habits` (security definer rpc
 `get_user_habits`, migration `20261013120000_user_habits.sql`) returns another
@@ -265,23 +266,53 @@ Frontend: `src/lib/friendsApi.ts` has `useFriends()` (polled every 30s under pre
 key `friends`, with a listener set so a change in one place shows everywhere),
 `relationTo()` and `changeFriendship(token, "send"|"accept"|"decline"|"unfriend", id)`.
 A 404/409 there means the screen was behind, so it just re-reads. Every change
-invalidates the leaderboards and both feed keys. **Profiles only open for friends (and yourself)**, per Luka on 2026-10-21. In the
-social tab's search, a non-friend's row is a `.result-row` (not a link) with
-"add friend", "requested" or "accept" at the end. "requested" is a
-plain `.ac-btn` with an "unrequest" tooltip, and one click withdraws the request
-with no confirmation (Luka's call). This goes through
-`AccountList`'s `action` prop, so `.results` row styles are scoped to
-`li > button` to keep the action button from being styled as a row. A friend's
-row opens `ProfileModal` as before, which has a two-step `Unfriend` that closes
-the modal when it's done. The social tab lists incoming requests above the feed (`.feed-list.requests`, not
-clipped or faded), with accept and decline; those rows don't open a profile. Activity feed rows are
-`button.feed-item` and open that person's profile; the feed is friends only, so
-they always can. The nav shows a green `.nav-dot` on "social" while requests
-wait. "Join a friend" in NewHabit now picks from your friends, not all accounts.
+invalidates the leaderboards and both feed keys. **Profiles only open for friends (and yourself)**, per Luka on 2026-10-21.
+Withdrawing a request ("requested") is one click with no confirmation (Luka's call).
+`ProfileModal` has a two-step `Unfriend` that closes the modal when it's done. The
+nav shows a green `.nav-dot` on "social" while requests wait. "Join a friend" in
+NewHabit picks from your friends, not all accounts.
 
 Both friends migrations were pushed to the live db on 2026-10-21. The backend and
 frontend code still has to be deployed: until it is, live has the new tables and
 friends-only rpcs, but there's no `/api/friends` and no UI for adding friends.
+
+**Social tab redesign (2026-10-23, built; migrations pushed to live 2026-10-24, code not yet committed or deployed).** Spec `~/Downloads/Main.dc.html`,
+plan `plans/social-redesign.md`, migration `20261023120000_social_redesign.sql`.
+Luka cut cheers before it was built. Layout: search pill on top
+(`SocialSearch.tsx`, results drop down over the page, esc closes from anywhere),
+then `.social-cols` = `flex-direction: row-reverse` + wrap, so the side column
+(`SocialSide.tsx`: friend requests, people you may know) sits right on desktop and
+stacks above the feed when it wraps. No media query: it wraps once the content is
+under ~940px. Colours are the app's tokens (`--dune` cards, `--line` dividers),
+gold `#F2BF48` for the request badge and milestones, green `#5FA46B` for "friends".
+- search rows: friends open the profile; others get add friend / requested
+  (cancels) / accept request. The live `useFriends` relation beats the one the
+  search returned, so a row updates the moment you act.
+- requests card: hidden when there's nothing to answer. An accepted row stays,
+  reading "friends", until you leave the tab.
+- people you may know (`get_suggestions`): friends of friends first (most mutual),
+  then hop 3; shared habits only break ties and are never shown, since naming a
+  stranger's habit would break "no peeking". Nobody unconnected is suggested.
+  Fetches 8 once per visit, shows 3, so a dismissed one gets replaced; dismissals
+  are a table (`suggestion_dismissals`). Reason line: "N mutual friends", "friends
+  with <name>" (hop 2, one mutual), "friends with <first>'s friends" (hop 3).
+- feed: `useLiveFeed` (`lib/liveFeed.ts`), `FEED_SIZE` 10, one list with no day
+  groups (Luka cut them 2026-10-24). Each row has its streak; milestones (7/14/30/50/every
+  100) get a gold wash and "hit a N-day streak on"; `personal_best` swaps the
+  sub line to "new personal best".
+- **realtime:** `postgres_changes` on `habit_entries` can't work because RLS hides
+  friends' entries from the subscriber. Instead trigger `trg_entries_ping_feed`
+  calls `realtime.send()` with `{entry_id}` to the private topic `feed:<friend id>`
+  of each friend; a policy on `realtime.messages` checks `realtime.topic()`
+  against `auth.uid()`. The client subscribes with supabase-js
+  (`config: { private: true }`, after `realtime.setAuth(token)`), waits 800ms
+  for a burst to settle, then re-reads. New or changed rows only bump the "N new
+  updates" button; rows the server dropped vanish at once. Fallback poll 60s.
+  Verified end to end on a local stack: the button appeared within ~2s of an insert.
+- local e2e recipe: `npx supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector,supavisor`
+  (Docker), seed through the auth admin API + psql, then run a second backend
+  on 8002 and vite on 5174 with env overrides (`BACKEND_CORS_ORIGINS` must list
+  5174), so the dev servers on 8001/5173 against the live db are left alone.
 
 **The split:** the browser talks to Supabase Auth *directly* for signup / login /
 refresh (`@supabase/supabase-js`). Everything else goes browser → FastAPI →

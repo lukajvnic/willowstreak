@@ -10,9 +10,19 @@ export type Activity = {
   /** the entry's id — stable, so a poll can tell new from already-seen */
   id: string;
   person: PersonStub;
+  /** "checked off gym", for one-line uses like the habits tab's bubbles */
   text: string;
+  /** the words between the name and the habit: "checked off", "logged 45 min of" */
+  verb: string;
+  habit: string;
   /** when it was logged, ms since epoch */
   at: number;
+  /** consecutive logged days of the habit, ending on this one */
+  streak: number;
+  /** 7, 14, 30 or 50 days, or a multiple of 100 */
+  milestone: boolean;
+  /** the day this streak passed the habit's previous longest */
+  personalBest: boolean;
 };
 
 type ApiActivity = {
@@ -23,25 +33,37 @@ type ApiActivity = {
   unit: string;
   value: string | number;
   logged_at: string;
+  streak: number;
+  milestone: boolean;
+  personal_best: boolean;
 };
 
-/** "checked off gym", "logged 45 min of reading" */
-function describe(a: ApiActivity): string {
-  if (a.type === "completion") return `checked off ${a.habit}`;
+/** "checked off", "logged 45 min of", "hit a 30-day streak on" */
+function verbOf(a: ApiActivity): string {
+  if (a.milestone) return `hit a ${a.streak}-day streak on`;
+  if (a.type === "completion") return "checked off";
   const amount = [formatAmount(Number(a.value)), a.unit].filter(Boolean).join(" ");
-  return `logged ${amount} of ${a.habit}`;
+  return `logged ${amount} of`;
 }
 
 /** the most recent logs from everyone but you, newest first */
 export async function loadActivity(token: string, limit: number): Promise<Activity[]> {
   const res = await api(`/api/activity?limit=${limit}`, { token });
   if (!res.ok) throw new Error(`activity load failed (${res.status})`);
-  return (res.data as { activity: ApiActivity[] }).activity.map((a) => ({
-    id: a.id,
-    person: stubOf(a.user),
-    text: describe(a),
-    at: new Date(a.logged_at).getTime(),
-  }));
+  return (res.data as { activity: ApiActivity[] }).activity.map((a) => {
+    const verb = verbOf(a);
+    return {
+      id: a.id,
+      person: stubOf(a.user),
+      text: `${verb} ${a.habit}`,
+      verb,
+      habit: a.habit,
+      at: new Date(a.logged_at).getTime(),
+      streak: a.streak,
+      milestone: a.milestone,
+      personalBest: a.personal_best,
+    };
+  });
 }
 
 const POLL_MS = 30_000;

@@ -1,10 +1,12 @@
 from supabase import Client
 
 from app.core.auth import CurrentUser
-from app.modules.friends.schemas import FriendshipResponse, FriendsResponse
+from app.modules.friends.schemas import FriendshipResponse, FriendsResponse, SuggestionsResponse
 from app.modules.friends.service import (
     accept_request,
+    dismiss_suggestion,
     list_friends,
+    list_suggestions,
     remove_friend,
     remove_request,
     send_request,
@@ -33,3 +35,11 @@ def remove_request_controller(current_user: CurrentUser, client: Client, user_id
 
 def remove_friend_controller(current_user: CurrentUser, client: Client, user_id: str) -> None:
     remove_friend(client, current_user.id, user_id)
+
+
+def list_suggestions_controller(client: Client, limit: int) -> SuggestionsResponse:
+    return SuggestionsResponse(suggestions=list_suggestions(client, limit))
+
+
+def dismiss_suggestion_controller(current_user: CurrentUser, client: Client, user_id: str) -> None:
+    dismiss_suggestion(client, current_user.id, user_id)

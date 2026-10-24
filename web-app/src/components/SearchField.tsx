@@ -2,10 +2,11 @@ type Props = {
   value: string;
   onChange: (value: string) => void;
   autoFocus?: boolean;
+  placeholder?: string;
 };
 
 /** the account search pill — pair it with `useAccountSearch` */
-export default function SearchField({ value, onChange, autoFocus }: Props) {
+export default function SearchField({ value, onChange, autoFocus, placeholder = "search accounts" }: Props) {
   return (
     <div className="search">
       <svg viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -15,7 +16,7 @@ export default function SearchField({ value, onChange, autoFocus }: Props) {
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="search accounts"
+        placeholder={placeholder}
         aria-label="search accounts"
         autoFocus={autoFocus}
       />

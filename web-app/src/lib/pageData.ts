@@ -7,7 +7,7 @@ import type { PersonStub } from "./usersApi";
 
 /** how many events the social feed shows — shared so the preload and the tab
  * ask for the same thing and land in the same cache slot */
-export const FEED_SIZE = 14;
+export const FEED_SIZE = 10;
 
 /** the habits tab's drifting bubbles — their own feed slot */
 export const BUBBLES_SIZE = 10;

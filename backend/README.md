@@ -42,13 +42,15 @@ This is the opposite of enforcing access in Python. Consequences worth knowing:
 - Anything needing to see past RLS is an explicit `security definer` function
   with a deliberately narrow return. `username_available()` returns a bare
   boolean, because a caller genuinely cannot see whether someone else already
-  holds a name. `search_users()`, `get_user_card()`, `get_user_habits()`,
+  holds a name. `search_people()`, `get_user_card()`, `get_user_habits()`,
   `get_user_grids()`, `get_leaderboards()` and `get_activity()` are the social
   reads: each exists to show the caller a named slice of other people's rows.
   Search and the card cover every account; the habits, grids, leaderboards
   and feed are limited to `my_circle()` (the caller plus accepted friends,
   migration `20261021130000_friends_only.sql`). `get_friendships()` returns the
-  caller's own friendships with the other person's public profile.
+  caller's own friendships with the other person's public profile, and
+  `get_suggestions()` walks the friendship graph (migration
+  `20261023120000_social_redesign.sql`).
 - `get_my_stats()` is `security invoker` on purpose — it inherits the caller's
   policies, so it needs no user argument and can't be pointed at someone else.
 
@@ -150,12 +152,20 @@ POST  /api/me   {username, first_name, last_name?, bio?}
 PATCH /api/me   {first_name?, last_name?, bio?, avatar?, avatar_path?}  -> {user}
 GET   /api/me/stats                        -> {stats}
 GET   /api/usernames/{username}/available  -> {"available": bool}
-GET   /api/users?search=<prefix>            -> {users: [...]}  (username startswith)
+GET   /api/users?search=<q>&limit=6         -> {users: [...]}  (name or username, ranked)
 GET   /api/users/{id}/card                  -> {card}  (public profile + streak/best/tracked)
 GET   /api/users/{id}/habits                -> {habits: [{name, type, goal, unit}]}
 GET   /api/users/{id}/habits?include=entries&from=YYYY-MM-DD&to=YYYY-MM-DD
                                             -> {habits: [{..., entries: [{entry_date, value}]}]}
 ```
+
+Search matches the full name or the username, any case, anywhere in it; a
+leading `@` is ignored and you're never in it. `search` is 1–40 characters,
+`limit` 1–20 (default 6). Ranked: the name starts with it, then a word of the
+name does, then the username does, then it's somewhere inside; ties go friends,
+requests to you, requests from you, everyone else, then most mutual friends.
+Each hit carries `relation` (`friends` | `incoming` | `outgoing` | `none`) and
+`mutual_friends`.
 
 `/users/{id}/habits` is someone's unarchived habits, definition only — no ids.
 The new-habit dialog copies from it. With `include=entries` it also carries a
@@ -203,7 +213,8 @@ GET /api/activity?limit=20                                     -> {activity: [..
 
 {"activity": [{"id": "uuid", "user": {...}, "habit": "reading", "type": "count",
                "unit": "min", "value": "45", "entry_date": "2026-10-13",
-               "logged_at": "2026-10-13T18:02:11Z"}]}
+               "logged_at": "2026-10-13T18:02:11Z", "streak": 7,
+               "milestone": true, "personal_best": false}]}
 ```
 
 **Leaderboards:** one board per habit *the caller* tracks, ranking the caller and
@@ -218,7 +229,18 @@ the six days before `today` or it's **422 `week_start_out_of_range`**.
 
 **Activity:** the most recent logged days from the caller's friends,
 newest first, `limit` 1–50. A recorded zero isn't included. `id` is the entry's
-id, so a polling client can tell what it has already shown.
+id, so a polling client can tell what it has already shown. `streak` is the run
+of logged days of that habit ending on `entry_date`; `milestone` is a streak of
+7, 14, 30 or 50, or a multiple of 100; `personal_best` marks the day a streak
+passed the habit's previous longest.
+
+**Realtime ping.** Logging a day (insert, or a changed `value`) broadcasts
+`{entry_id}` as event `activity` on the private Realtime topic `feed:<friend id>`
+for each of the logger's friends, from the trigger `trg_entries_ping_feed`.
+Private and archived habits and zero values don't ping. A policy on
+`realtime.messages` lets each user listen on their own topic only. The browser
+subscribes with supabase-js and re-reads `/api/activity` when one arrives; the
+ping carries no habit data.
 
 ### Reminders — the to-do tab
 
@@ -253,11 +275,17 @@ POST   /api/friends/requests/{user_id}         -> 201 {friendship} | 200 if it a
 POST   /api/friends/requests/{user_id}/accept  -> {friendship} | 404 request_not_found
 DELETE /api/friends/requests/{user_id}         -> 204 | 404 request_not_found
 DELETE /api/friends/{user_id}                  -> 204 | 404 friend_not_found
+GET    /api/friends/suggestions?limit=3        -> {suggestions: [...]}
+POST   /api/friends/suggestions/{user_id}/dismiss  -> 204 | 404 user_not_found
 ```
 
 ```jsonc
-{"friends":  [{"user": {"id": "uuid", "username": "sam", ...}, "since": "2026-10-21T..."}],
+{"friends":  [{"user": {"id": "uuid", "username": "sam", ...}, "since": "2026-10-21T...",
+               "mutual_friends": 2}],
  "incoming": [...], "outgoing": [...]}
+
+{"suggestions": [{"user": {...}, "hop": 2, "mutual_friends": 3,
+                  "via": {"username": "phoenix", "first_name": "Phoenix", "last_name": "H"}}]}
 
 {"friendship": {"requester_id": "uuid", "addressee_id": "uuid", "status": "pending",
                 "created_at": "2026-10-21T...", "accepted_at": null}}
@@ -275,6 +303,14 @@ while it's pending.
   cancelling and unfriending all delete the row, so either person can ask again.
 - RLS: only the two people see the row and either can delete it; only the person
   asked can accept; the pair columns can't be updated at all.
+
+**Suggestions** ("people you may know") are nearest on the friendship graph
+first: friends of your friends (`hop` 2), most mutual friends first, then their
+friends (`hop` 3), most connecting paths first. Shared habits only break ties
+and are never returned. Nobody further than three hops, nobody you're friends
+with or have a pending request with either way, and nobody you've dismissed.
+`via` is a friend of yours on the path, for a reason line. Dismissing is
+permanent and idempotent; yourself is **422 `cannot_dismiss_yourself`**.
 
 ### Habits
 

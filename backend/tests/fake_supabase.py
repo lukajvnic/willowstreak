@@ -199,17 +199,12 @@ class _Rpc:
             return _Response(not taken)
         if self._name == "get_my_stats":
             return _Response([self._db.stats()])
-        if self._name == "search_users":
-            prefix = self._params["p_prefix"]
-            if not re.fullmatch(r"[a-z0-9_]{1,20}", prefix):
-                return _Response([])
-            hits = sorted(
-                (u for u in self._db.tables.get("users", [])
-                 if u["username"].startswith(prefix)),
-                key=lambda u: u["username"],
-            )[:20]
-            public = ("id", "username", "first_name", "last_name", "avatar", "avatar_path")
-            return _Response([{k: u.get(k) for k in public} for u in hits])
+        if self._name == "search_people":
+            return _Response(self._db.search_people(
+                self._params["p_query"], int(self._params["p_limit"]),
+            ))
+        if self._name == "get_suggestions":
+            return _Response(self._db.suggestions(int(self._params["p_limit"])))
         if self._name == "get_user_card":
             target = str(self._params["p_user_id"])
             user = next(
@@ -273,6 +268,7 @@ class FakeDB:
         self.tables: dict[str, list[dict]] = {
             "users": [], "habits": [], "habit_entries": [],
             "reminders": [], "reminder_categories": [], "friendships": [],
+            "suggestion_dismissals": [],
         }
         self.current_user_id: str | None = None
 
@@ -319,6 +315,8 @@ class FakeDB:
             raise APIError({"code": UNIQUE_VIOLATION, "message": f"{table}_pkey"})
         if table == "friendships":
             self._check_friendship(row)
+        if table == "suggestion_dismissals":
+            self._check_dismissal(row)
         if table == "habit_entries":
             row.setdefault("updated_at", None)
             key = (str(row["habit_id"]), str(row["entry_date"]))
@@ -343,6 +341,108 @@ class FakeDB:
                for f in self.tables["friendships"]):
             raise APIError({"code": UNIQUE_VIOLATION, "message": "uq_friendship_pair"})
 
+    def _check_dismissal(self, row: dict) -> None:
+        """ck_dismissal_not_self, the foreign keys, and the primary key."""
+        row.pop("id", None)
+        pair = (str(row["user_id"]), str(row["dismissed_id"]))
+        if pair[0] == pair[1]:
+            raise APIError({"code": CHECK_VIOLATION, "message": "ck_dismissal_not_self"})
+        if not set(pair) <= {str(u["id"]) for u in self.tables["users"]}:
+            raise APIError({"code": FOREIGN_KEY_VIOLATION, "message": "suggestion_dismissals_fkey"})
+        if any((str(d["user_id"]), str(d["dismissed_id"])) == pair
+               for d in self.tables["suggestion_dismissals"]):
+            raise APIError({"code": UNIQUE_VIOLATION, "message": "suggestion_dismissals_pkey"})
+
+    def graph(self) -> dict[str, set[str]]:
+        """Same as friend_pairs(): everyone's accepted friends."""
+        edges: dict[str, set[str]] = {}
+        for f in self.tables["friendships"]:
+            if f["status"] == "accepted":
+                a, b = str(f["requester_id"]), str(f["addressee_id"])
+                edges.setdefault(a, set()).add(b)
+                edges.setdefault(b, set()).add(a)
+        return edges
+
+    def mutual(self, other: str) -> int:
+        edges = self.graph()
+        return len(edges.get(str(self.current_user_id), set()) & edges.get(other, set()))
+
+    def relation(self, other: str) -> str:
+        me = str(self.current_user_id)
+        for f in self.tables["friendships"]:
+            if {str(f["requester_id"]), str(f["addressee_id"])} == {me, other}:
+                if f["status"] == "accepted":
+                    return "friends"
+                return "incoming" if str(f["addressee_id"]) == me else "outgoing"
+        return "none"
+
+    def _public(self, user: dict) -> dict:
+        return {k: user.get(k) for k in (
+            "id", "username", "first_name", "last_name", "avatar", "avatar_path",
+        )}
+
+    def search_people(self, query: str, limit: int) -> list[dict]:
+        """Same rules as search_people(): name or username, anywhere, any case;
+        name starts first, then friends, then mutual friends."""
+        q = query.strip().lstrip("@").strip().lower()
+        if not 1 <= len(q) <= 40:
+            return []
+        rank = {"friends": 0, "incoming": 1, "outgoing": 2, "none": 3}
+        hits = []
+        for u in self.tables["users"]:
+            uid = str(u["id"])
+            name = f"{u['first_name']} {u['last_name']}".strip().lower()
+            if uid == str(self.current_user_id) or (q not in name and q not in u["username"]):
+                continue
+            tier = (0 if name.startswith(q) else 1 if f" {q}" in f" {name}"
+                    else 2 if u["username"].startswith(q) else 3)
+            relation, mutual = self.relation(uid), self.mutual(uid)
+            hits.append((
+                (tier, rank[relation], -mutual, u["username"]),
+                {**self._public(u), "relation": relation, "mutual_friends": mutual},
+            ))
+        hits.sort(key=lambda h: h[0])
+        return [row for _, row in hits[: max(1, min(limit, 20))]]
+
+    def suggestions(self, limit: int) -> list[dict]:
+        """Same walk as get_suggestions(): friends of friends, then their
+        friends, skipping anyone you already have a row with or dismissed."""
+        me = str(self.current_user_id)
+        edges = self.graph()
+        taken = {me} | {d["dismissed_id"] for d in self.tables["suggestion_dismissals"]
+                        if str(d["user_id"]) == me}
+        for f in self.tables["friendships"]:
+            pair = {str(f["requester_id"]), str(f["addressee_id"])}
+            if me in pair:
+                taken |= pair
+        reach2 = [(c, m) for m in edges.get(me, set()) for c in edges.get(m, set()) if c != me]
+        hops: dict[str, tuple[int, list[str]]] = {}
+        for c, m in reach2:
+            if c not in taken:
+                hops.setdefault(c, (2, []))[1].append(m)
+        for x, m in reach2:
+            for c in edges.get(x, set()):
+                if c not in taken and hops.get(c, (3,))[0] == 3:
+                    hops.setdefault(c, (3, []))[1].append(m)
+
+        def keys(uid: str) -> set[str]:
+            return {h["name"].strip().lower() for h in self.active_habits(uid)
+                    if not h.get("private")}
+
+        users = {str(u["id"]): u for u in self.tables["users"]}
+        rows = []
+        for c, (hop, vias) in hops.items():
+            via = users[min(vias)]
+            rows.append((
+                (hop, -len(vias), -len(keys(c) & keys(me)), users[c]["username"]),
+                {**self._public(users[c]), "hop": hop,
+                 "mutual_friends": len(vias) if hop == 2 else 0,
+                 "via_username": via["username"], "via_first_name": via["first_name"],
+                 "via_last_name": via["last_name"]},
+            ))
+        rows.sort(key=lambda r: r[0])
+        return [row for _, row in rows[: max(1, min(limit, 20))]]
+
     def circle(self) -> set[str]:
         """Same as my_circle(): the caller plus their accepted friends."""
         me = str(self.current_user_id)
@@ -366,6 +466,7 @@ class FakeDB:
             rows.append({
                 **self._user_row(other), "status": f["status"], "incoming": incoming,
                 "created_at": f["created_at"], "accepted_at": f["accepted_at"],
+                "mutual_friends": self.mutual(other),
             })
         rows.sort(key=lambda r: str(r["accepted_at"] or r["created_at"]), reverse=True)
         return rows
@@ -451,9 +552,31 @@ class FakeDB:
                 "habit": h["name"], "type": h["type"], "unit": h["unit"],
                 "value": e["value"], "entry_date": e["entry_date"],
                 "logged_at": e.get("updated_at") or e["created_at"],
+                **self._streak_at(h, date.fromisoformat(str(e["entry_date"]))),
             })
         rows.sort(key=lambda r: str(r["logged_at"]), reverse=True)
         return rows[: max(1, min(limit, 50))]
+
+    def _streak_at(self, habit: dict, day: date) -> dict:
+        """Same as get_activity()'s streak columns: the run of logged days
+        ending on `day`, whether it's a milestone, and whether it's the day the
+        run passed the habit's previous longest."""
+        done = {d for d, v in self._days(habit).items() if v > 0}
+        streak, cursor = 0, day
+        while cursor in done:
+            streak += 1
+            cursor -= timedelta(days=1)
+        earlier = best = 0
+        for d in sorted(done):
+            if d > cursor:
+                break
+            earlier = earlier + 1 if d - timedelta(days=1) in done else 1
+            best = max(best, earlier)
+        return {
+            "streak": streak,
+            "milestone": streak in (7, 14, 30, 50) or (streak >= 100 and streak % 100 == 0),
+            "personal_best": best > 0 and streak == best + 1,
+        }
 
     def stats(self, user_id: str | None = None) -> dict:
         """Same rules as get_my_stats(): consecutive days with value > 0, a run

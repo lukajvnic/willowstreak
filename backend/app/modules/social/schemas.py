@@ -36,6 +36,12 @@ class ActivityData(BaseModel):
     value: Decimal
     entry_date: date
     logged_at: datetime
+    # consecutive logged days of this habit ending on entry_date
+    streak: int
+    # 7, 14, 30 or 50 days, or a multiple of 100
+    milestone: bool
+    # the day this streak passed the habit's previous longest
+    personal_best: bool
 
 
 class ActivityResponse(BaseModel):
