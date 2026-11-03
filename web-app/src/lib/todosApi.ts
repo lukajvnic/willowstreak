@@ -24,6 +24,8 @@ type ApiReminder = {
   /** absent until the repeat migration is applied */
   repeat?: Reminder["repeat"];
   repeat_until?: string | null;
+  /** absent until the done-dates migration is applied */
+  done_dates?: string[] | null;
   place: string;
   category_id: string | null;
 };
@@ -42,6 +44,7 @@ function toReminder(row: ApiReminder): Reminder {
     alert: row.alert_minutes ?? undefined,
     repeat: row.repeat ?? undefined,
     repeatUntil: row.repeat_until ?? undefined,
+    doneDates: row.done_dates ?? undefined,
     place: row.place || undefined,
     categoryId: row.category_id ?? undefined,
   };
@@ -102,6 +105,12 @@ export async function editReminder(token: string, r: Reminder): Promise<void> {
 
 export async function setReminderDone(token: string, id: string, done: boolean): Promise<void> {
   const res = await api(`/api/reminders/${id}`, { method: "PATCH", token, body: { done } });
+  if (!res.ok) throw failure("reminder update failed", res);
+}
+
+/** a repeating reminder's ticked-off occurrences, all of them, by start day */
+export async function setDoneDates(token: string, id: string, doneDates: string[]): Promise<void> {
+  const res = await api(`/api/reminders/${id}`, { method: "PATCH", token, body: { done_dates: doneDates } });
   if (!res.ok) throw failure("reminder update failed", res);
 }
 

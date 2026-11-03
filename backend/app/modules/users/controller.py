@@ -6,6 +6,7 @@ from app.core.auth import CurrentUser
 from app.modules.users.schemas import (
     UserCardResponse,
     UserCreateRequest,
+    UserFriendsResponse,
     UserGridsResponse,
     UserHabitsResponse,
     UsernameAvailableResponse,
@@ -18,6 +19,7 @@ from app.modules.users.service import (
     create_user,
     get_stats,
     get_user_card,
+    get_user_friends,
     get_user_grids,
     get_user_habits,
     require_user,
@@ -59,6 +61,10 @@ def search_users_controller(client: Client, query: str, limit: int) -> UserSearc
 
 def user_card_controller(client: Client, user_id: str) -> UserCardResponse:
     return UserCardResponse(card=get_user_card(client, user_id))
+
+
+def user_friends_controller(client: Client, user_id: str) -> UserFriendsResponse:
+    return UserFriendsResponse(friends=get_user_friends(client, user_id))
 
 
 def user_habits_controller(client: Client, user_id: str) -> UserHabitsResponse:

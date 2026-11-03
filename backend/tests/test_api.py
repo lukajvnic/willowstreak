@@ -400,6 +400,29 @@ def test_user_card_carries_profile_and_stats(client, sign_in):
     assert "habits" not in card and "entries" not in card
 
 
+def test_profile_friends_count_and_list(client, sign_in, db):
+    me = register(client, "me", first="Mo")["id"]
+    friend = register(sign_in(), "pal", first="Pat")["id"]
+    theirs = register(sign_in(), "zed", first="Zoe")["id"]
+    stranger = register(sign_in(), "stranger", first="Sam")["id"]
+    befriend(db, me, friend)
+    befriend(db, friend, theirs)
+
+    viewer = sign_in(me)
+    assert viewer.get(f"/api/users/{friend}/card").json()["card"]["friends"] == 2
+    assert viewer.get(f"/api/users/{me}/card").json()["card"]["friends"] == 1
+
+    # a friend's list carries you too, and where you stand with everyone else
+    listed = viewer.get(f"/api/users/{friend}/friends").json()["friends"]
+    assert [(f["username"], f["relation"]) for f in listed] == [("me", "self"), ("zed", "none")]
+    assert listed[1]["mutual_friends"] == 1
+    assert [f["username"] for f in viewer.get(f"/api/users/{me}/friends").json()["friends"]] == ["pal"]
+
+    # a stranger's list (or a friend of a friend's) isn't yours to read
+    assert viewer.get(f"/api/users/{theirs}/friends").json()["friends"] == []
+    assert viewer.get(f"/api/users/{stranger}/friends").json()["friends"] == []
+
+
 def test_user_card_unknown_user_is_404(client):
     register(client)
     import uuid as _uuid
@@ -803,7 +826,7 @@ def test_reminder_repeat(client):
 
     rid = body["id"]
     edit = {k: v for k, v in body.items() if k != "id"}
-    # rolling forward to the next occurrence is an edit that doesn't mention the rule
+    # an edit that doesn't mention the rule leaves it alone
     r = client.put(f"/api/reminders/{rid}", json={**edit, "start_date": "2026-11-09"})
     assert r.status_code == 200 and r.json()["reminder"]["repeat"] == "weekly"
     # an explicit null stops it repeating
@@ -819,6 +842,29 @@ def test_reminder_repeat(client):
     assert client.put(f"/api/reminders/{rid}", json={**edit, "repeat_until": "2026-12-01"}).status_code == 422
     assert client.put(f"/api/reminders/{rid}", json={**edit, "repeat": "daily", "repeat_until": "2026-10-01"}).status_code == 422
     assert client.put(f"/api/reminders/{rid}", json={**edit, "repeat": "hourly"}).status_code == 422
+
+
+def test_reminder_ticks_off_one_occurrence(client):
+    register(client)
+    body = new_reminder(kind="anchor", start_date="2026-11-02", repeat="weekly")
+    rid = client.post("/api/reminders", json=body).json()["reminder"]["id"]
+    assert client.get("/api/reminders").json()["reminders"][0]["done_dates"] == []
+
+    # the client sends the whole list; it comes back deduped and in order
+    r = client.patch(f"/api/reminders/{rid}", json={"done_dates": ["2026-11-16", "2026-11-09", "2026-11-09"]})
+    assert r.status_code == 200, r.text
+    got = r.json()["reminder"]
+    assert got["done_dates"] == ["2026-11-09", "2026-11-16"]
+    # the series itself isn't finished, and keeps its first date
+    assert got["done"] is False and got["start_date"] == "2026-11-02"
+
+    # an edit leaves the ticked-off occurrences alone
+    edit = {k: v for k, v in body.items() if k != "id"} | {"title": "renamed"}
+    assert client.put(f"/api/reminders/{rid}", json=edit).json()["reminder"]["done_dates"] == ["2026-11-09", "2026-11-16"]
+
+    assert client.patch(f"/api/reminders/{rid}", json={"done_dates": []}).json()["reminder"]["done_dates"] == []
+    assert client.patch(f"/api/reminders/{rid}", json={}).status_code == 422
+    assert client.patch(f"/api/reminders/{rid}", json={"done_dates": ["soon"]}).status_code == 422
 
 
 def test_reminders_are_private(client, sign_in):

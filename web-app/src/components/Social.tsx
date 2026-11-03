@@ -7,6 +7,7 @@ import UserAvatar from "./UserAvatar";
 import { useAuth } from "../lib/auth";
 import { changeFriendship, useFriends, type Change } from "../lib/friendsApi";
 import { useLiveFeed } from "../lib/liveFeed";
+import { preloadProfile } from "../lib/pageData";
 import type { PersonStub } from "../lib/usersApi";
 
 function ago(ms: number) {
@@ -81,7 +82,12 @@ export default function Social() {
               {/* the feed is friends only, so everyone in it has a profile to open */}
               {items.map((a) => (
                 <li key={a.id} data-milestone={a.milestone || undefined}>
-                  <button className="feed-row" type="button" onClick={() => setSelected(a.person)}>
+                  <button
+                    className="feed-row"
+                    type="button"
+                    onClick={() => setSelected(a.person)}
+                    onPointerEnter={() => token && preloadProfile(token, a.person.id)}
+                  >
                     <UserAvatar user={a.person} size={40} />
                     <span className="feed-row-body">
                       <span className="feed-row-what">

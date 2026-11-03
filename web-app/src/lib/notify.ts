@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { KEYS } from "./pageData";
 import { peek, preload } from "./preload";
-import { fmtTime, keyOf, occurrenceOn, parseKey, shiftKey, type Reminder } from "./todos";
+import { doneAt, fmtTime, keyOf, occurrenceOn, parseKey, shiftKey, type Reminder } from "./todos";
 import { loadTodos } from "./todosApi";
 
 /**
@@ -89,7 +89,8 @@ function dueTimes(r: Reminder): { day: string; due: number }[] {
   const [h, m] = r.time.split(":").map(Number);
   const today = keyOf(new Date());
   return [shiftKey(today, -1), today, shiftKey(today, 1), shiftKey(today, 2)]
-    .filter((day) => occurrenceOn(r, day)?.start === day)
+    // a ticked-off occurrence of a repeating one stays quiet
+    .filter((day) => occurrenceOn(r, day)?.start === day && !doneAt(r, day))
     .map((day) => {
       const d = parseKey(day);
       d.setHours(h, m, 0, 0);

@@ -37,6 +37,8 @@ class ReminderData(BaseModel):
     alert_minutes: int | None = None
     repeat: Repeat | None = None
     repeat_until: date | None = None
+    # a repeating reminder's ticked-off occurrences, by start day
+    done_dates: list[date] = Field(default_factory=list)
     place: str = ""
     category_id: str | None = None
     created_at: datetime | None = None
@@ -55,7 +57,7 @@ class ReminderShape(BaseModel):
     duration_minutes: int | None = Field(default=None, ge=5, le=1440)
     # anchors only — minutes before the start to alert; null is no alert
     alert_minutes: int | None = Field(default=None, ge=0, le=1440)
-    # anchors and floaters; the row is the current occurrence. null = one-off
+    # anchors and floaters; the dates are the first occurrence. null = one-off
     repeat: Repeat | None = None
     # the last day it can fall on; null repeats forever
     repeat_until: date | None = None
@@ -104,12 +106,22 @@ class ReminderCreateRequest(ReminderShape):
 
 
 class ReminderEditRequest(ReminderShape):
-    """A full rewrite of what the reminder says. `done` is left alone — that
-    has its own PATCH."""
+    """A full rewrite of what the reminder says. `done` and `done_dates` are
+    left alone — those have their own PATCH."""
 
 
 class ReminderUpdateRequest(BaseModel):
-    done: bool
+    """Ticking off: `done` for a one-off, or the whole list of a repeating
+    one's ticked-off occurrences."""
+
+    done: bool | None = None
+    done_dates: list[date] | None = Field(default=None, max_length=5000)
+
+    @model_validator(mode="after")
+    def _check_something(self):
+        if self.done is None and self.done_dates is None:
+            raise ValueError("send done or done_dates")
+        return self
 
 
 class ReminderResponse(BaseModel):

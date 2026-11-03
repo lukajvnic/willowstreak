@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   covers,
+  doneAt,
+  doneOn,
   DEFAULT_DURATION,
   endTime,
   fmtDay,
@@ -298,7 +300,7 @@ export default function Calendar({ reminders, selected, onSelect, onResize, onCr
                                     ? "end"
                                     : "mid"
                             }
-                            data-done={r.done}
+                            data-done={doneAt(r, occ.start)}
                             style={{ "--tone": kindInfo(r.kind).tone } as React.CSSProperties}
                           />
                         );
@@ -308,7 +310,7 @@ export default function Calendar({ reminders, selected, onSelect, onResize, onCr
                         <span
                           className="day-chip"
                           key={r.id}
-                          data-done={r.done}
+                          data-done={doneOn(r, key)}
                           style={{ "--tone": kindInfo(r.kind).tone } as React.CSSProperties}
                         >
                           <i />
@@ -356,7 +358,7 @@ export default function Calendar({ reminders, selected, onSelect, onResize, onCr
                       key={`${r.id}@${occ.start}`}
                       type="button"
                       className="band-chip"
-                      data-done={r.done}
+                      data-done={doneAt(r, occ.start)}
                       data-open-left={occ.start < days[0]}
                       data-open-right={occ.end > days[days.length - 1]}
                       style={{
@@ -401,7 +403,7 @@ export default function Calendar({ reminders, selected, onSelect, onResize, onCr
                             key={r.id}
                             type="button"
                             className="event"
-                            data-done={r.done}
+                            data-done={doneOn(r, key)}
                             data-stretching={stretch?.id === r.id}
                             style={{
                               "--tone": kindInfo(r.kind).tone,

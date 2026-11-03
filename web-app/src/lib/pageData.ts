@@ -3,7 +3,8 @@ import { photoUrl } from "./avatarStore";
 import { loadBoards, type Board } from "./leaderboards";
 import { preload } from "./preload";
 import { loadTodos } from "./todosApi";
-import type { PersonStub } from "./usersApi";
+import { loadUserGrids, type HabitWithEntries } from "./habitsApi";
+import { getUserCard, getUserFriends, type FriendOf, type Person, type PersonStub } from "./usersApi";
 
 /** how many events the social feed shows — shared so the preload and the tab
  * ask for the same thing and land in the same cache slot */
@@ -18,7 +19,41 @@ export const KEYS = {
   feed: `activity:${FEED_SIZE}`,
   bubbles: `activity:${BUBBLES_SIZE}`,
   friends: "friends",
+  /** one person's friends list, as their profile shows it */
+  friendsOf: (userId: string) => `friends-of:${userId}`,
+  /** a profile's header: name, joined, friend count, bio */
+  cardOf: (userId: string) => `card:${userId}`,
+  /** a profile's habit grids */
+  gridsOf: (userId: string) => `grids:${userId}`,
 } as const;
+
+/** a year won't fit the profile at a readable cell size */
+export const PROFILE_GRID_WEEKS = 24;
+
+export function preloadCard(token: string, userId: string): Promise<Person> {
+  return preload(KEYS.cardOf(userId), () => getUserCard(token, userId));
+}
+
+export function preloadGrids(token: string, userId: string): Promise<HabitWithEntries[]> {
+  return preload(KEYS.gridsOf(userId), () => loadUserGrids(token, userId, PROFILE_GRID_WEEKS));
+}
+
+/** everything a profile draws — warmed on hover, and for your own after sign-in,
+ * so opening one paints straight away */
+export function preloadProfile(token: string, userId: string) {
+  const quiet = () => {
+    // a failed warm-up is fine: the profile tries again itself when it opens
+  };
+  preloadCard(token, userId).catch(quiet);
+  preloadGrids(token, userId).catch(quiet);
+  preloadFriendsOf(token, userId).catch(quiet);
+}
+
+/** someone's friends list, through the cache — the profile warms it when it
+ * opens and the list reads the same slot, so it's there before it's clicked */
+export function preloadFriendsOf(token: string, userId: string): Promise<FriendOf[]> {
+  return preload(KEYS.friendsOf(userId), () => getUserFriends(token, userId));
+}
 
 const warmed = new Set<string>();
 
@@ -61,6 +96,8 @@ export function preloadTab(tab: string, token: string) {
   });
 }
 
-export function preloadAllTabs(token: string) {
+export function preloadAllTabs(token: string, userId?: string) {
   for (const tab of Object.keys(TAB_LOADS)) preloadTab(tab, token);
+  // your own profile too, so the avatar button opens it instantly
+  if (userId) preloadProfile(token, userId);
 }

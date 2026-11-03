@@ -99,6 +99,7 @@ export default function AddReminder({ categories, initial, preset, onAdd, onCrea
       title: title.trim(),
       kind: k,
       done: initial?.done ?? false,
+      doneDates: initial?.doneDates,
       categoryId: category ?? undefined,
     };
     if (k === "floater") {

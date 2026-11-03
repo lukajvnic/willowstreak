@@ -19,11 +19,14 @@ export type Reminder = {
    * "turned off", which an edit has to send so the server clears it; unset is
    * "never had one" */
   alert?: number | null;
-  /** anchors and floaters. the row is the current occurrence; the calendar draws
-   * the later ones and ticking it off rolls it forward. null / unset as `alert` */
+  /** anchors and floaters. `start` / `end` are the first occurrence; the calendar
+   * draws the later ones. null / unset as `alert` */
   repeat?: Repeat | null;
   /** the last day an occurrence can start on; unset repeats forever */
   repeatUntil?: string | null;
+  /** a repeating one's ticked-off occurrences, by start day — each is checked
+   * off on its own, and `done` is left alone */
+  doneDates?: string[];
   place?: string;
   /** free-form grouping — school, work, exercise... — orthogonal to kind */
   categoryId?: string;
@@ -379,55 +382,95 @@ function nthStart(start: string, rule: Exclude<Repeat, "weekdays">, n: number): 
   }
 }
 
+type Occurrence = { start: string; end: string };
+
+/** days an occurrence runs past its start — 0 for an anchor */
+const lengthOf = (r: Reminder) => (r.start && r.end ? daysBetween(r.start, r.end) : 0);
+
+/** which occurrence (counting from 0) is the last to start on or before `key`,
+ * leaving `repeatUntil` aside. weekdays has no fixed step, so it's not counted */
+function lastIndex(r: Reminder & { start: string }, rule: Exclude<Repeat, "weekdays">, key: string): number {
+  const span = { daily: 1, weekly: 7, biweekly: 14 } as Record<string, number>;
+  if (rule in span) return Math.floor(daysBetween(r.start, key) / span[rule]);
+  const a = parseKey(r.start);
+  const b = parseKey(key);
+  let n = (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth();
+  if (rule === "yearly") n = Math.floor(n / 12);
+  if (nthStart(r.start, rule, n) > key) n--;
+  return n;
+}
+
+/** the start of the last occurrence beginning on or before `key`, leaving
+ * `repeatUntil` aside — null before the first */
+function startOnOrBefore(r: Reminder, key: string): string | null {
+  if (!r.start || !r.repeat || key < r.start) return null;
+  if (r.repeat === "weekdays") {
+    let s = key;
+    while (!isWeekday(s)) s = shiftKey(s, -1);
+    return s >= r.start ? s : null;
+  }
+  return nthStart(r.start, r.repeat, lastIndex(r as Reminder & { start: string }, r.repeat, key));
+}
+
+/** the start of the first occurrence beginning on or after `key`, leaving
+ * `repeatUntil` aside */
+function startOnOrAfter(r: Reminder & { start: string; repeat: Repeat }, key: string): string {
+  if (r.repeat === "weekdays") {
+    let s = key < r.start ? r.start : key;
+    while (!isWeekday(s)) s = shiftKey(s, 1);
+    return s;
+  }
+  if (key <= r.start) return r.start;
+  const before = startOnOrBefore(r, key)!;
+  return before === key ? key : nthStart(r.start, r.repeat, lastIndex(r, r.repeat, key) + 1);
+}
+
 /** the occurrence of `r` that covers `key` — its own start and end — or null.
  * a one-off has just the one occurrence, itself */
-export function occurrenceOn(r: Reminder, key: string): { start: string; end: string } | null {
+export function occurrenceOn(r: Reminder, key: string): Occurrence | null {
   if (!r.start) return null;
-  const length = r.end ? daysBetween(r.start, r.end) : 0;
 
   if (!r.repeat) {
     return key >= r.start && key <= (r.end ?? r.start) ? { start: r.start, end: r.end ?? r.start } : null;
   }
-  if (key < r.start) return null;
+  if (key < r.start || (r.repeat === "weekdays" && !isWeekday(key))) return null;
 
-  let start: string;
-  if (r.repeat === "weekdays") {
-    if (!isWeekday(key)) return null;
-    start = key;
-  } else {
-    // the last occurrence starting on or before `key`
-    const span = { daily: 1, weekly: 7, biweekly: 14 } as Record<string, number>;
-    let n: number;
-    if (r.repeat in span) {
-      n = Math.floor(daysBetween(r.start, key) / span[r.repeat]);
-    } else {
-      const a = parseKey(r.start);
-      const b = parseKey(key);
-      n = (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth();
-      if (r.repeat === "yearly") n = Math.floor(n / 12);
-      if (nthStart(r.start, r.repeat, n) > key) n--;
-    }
-    start = nthStart(r.start, r.repeat, n);
-  }
-
-  if (r.repeatUntil && start > r.repeatUntil) return null;
-  const end = shiftKey(start, length);
+  const start = startOnOrBefore(r, key);
+  if (!start || (r.repeatUntil && start > r.repeatUntil)) return null;
+  const end = shiftKey(start, lengthOf(r));
   return key <= end ? { start, end } : null;
 }
 
-/** where a repeating reminder goes once this occurrence is ticked off — the
- * next start and end, or null when the repeat has run out */
-export function nextOccurrence(r: Reminder): { start: string; end?: string } | null {
-  if (!r.repeat || !r.start) return null;
-  let start: string;
-  if (r.repeat === "weekdays") {
-    start = shiftKey(r.start, 1);
-    while (!isWeekday(start)) start = shiftKey(start, 1);
-  } else {
-    start = nthStart(r.start, r.repeat, 1);
-  }
-  if (r.repeatUntil && start > r.repeatUntil) return null;
-  return { start, end: r.end ? shiftKey(start, daysBetween(r.start, r.end)) : undefined };
+/** the occurrence a list row stands for, seen from `key`: the one under way,
+ * else the next to come, else — once the repeat has run out — the last one */
+export function occurrenceNear(r: Reminder, key: string): Occurrence | null {
+  if (!r.start) return null;
+  if (!r.repeat) return { start: r.start, end: r.end ?? r.start };
+  const on = occurrenceOn(r, key);
+  if (on) return on;
+
+  let start = startOnOrAfter(r as Reminder & { start: string; repeat: Repeat }, key);
+  if (r.repeatUntil && start > r.repeatUntil) start = startOnOrBefore(r, r.repeatUntil) ?? r.start;
+  return { start, end: shiftKey(start, lengthOf(r)) };
+}
+
+/** is the occurrence starting on `start` ticked off? a one-off goes by `done` */
+export const doneAt = (r: Reminder, start: string) =>
+  r.repeat ? (r.doneDates ?? []).includes(start) : r.done;
+
+/** is whatever of `r` falls on `key` ticked off? */
+export function doneOn(r: Reminder, key: string): boolean {
+  const occ = occurrenceOn(r, key);
+  return occ ? doneAt(r, occ.start) : r.done;
+}
+
+/** the reminder as one occurrence of it — its dates and done state — for a
+ * list row. a one-off comes back as it is */
+export function atOccurrence(r: Reminder, key: string): Reminder {
+  if (!r.repeat) return r;
+  const occ = occurrenceNear(r, key);
+  if (!occ) return r;
+  return { ...r, start: occ.start, end: r.end ? occ.end : undefined, done: doneAt(r, occ.start) };
 }
 
 /* ---------- queries ---------- */

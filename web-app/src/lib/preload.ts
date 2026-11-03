@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 /**
  * A tiny shared cache so a tab can paint from data fetched before it opened.
@@ -75,6 +75,14 @@ export function invalidate(key: string) {
   delete slot.pending;
 }
 
+/** `invalidate` every key starting with `prefix` — e.g. all the friends lists
+ * after a friendship changes, whoever's they are */
+export function invalidatePrefix(prefix: string) {
+  for (const key of new Set([...slots.keys(), ...versions.keys()])) {
+    if (key.startsWith(prefix)) invalidate(key);
+  }
+}
+
 /** drop one key, so the next `preload` of it really asks the server */
 export function forget(key: string) {
   bump(key);
@@ -87,21 +95,35 @@ export function forgetAll() {
   slots.clear();
 }
 
+type Held<T> = { key: string | null; data: T | undefined; error: string };
+
 /** a tab's data: the cached copy straight away (if any), then the fresh one.
- * `error` is only set when there's nothing at all to show */
+ * when `key` changes (a profile swapping to someone else) it switches to that
+ * key's cached copy at once, never showing the last one's under the new key.
+ * `set` is for a local edit: it shows now and is written back to the cache */
 export function usePreloaded<T>(
   key: string | null,
   load: () => Promise<T>,
-): { data: T | undefined; error: string } {
-  const [data, setData] = useState<T | undefined>(() => (key ? peek<T>(key) : undefined));
-  const [error, setError] = useState("");
+): { data: T | undefined; error: string; set: (value: T) => void } {
+  const [held, setHeld] = useState<Held<T>>(() => ({
+    key,
+    data: key ? peek<T>(key) : undefined,
+    error: "",
+  }));
+  let current = held;
+  if (held.key !== key) {
+    current = { key, data: key ? peek<T>(key) : undefined, error: "" };
+    setHeld(current);
+  }
 
   useEffect(() => {
     if (!key) return;
     let stale = false;
+    const forKey = (patch: Partial<Held<T>>) =>
+      setHeld((h) => (h.key === key ? { ...h, ...patch } : h));
     preload(key, load)
-      .then((value) => !stale && setData(value))
-      .catch((err) => !stale && setError(String(err?.message ?? err)));
+      .then((value) => !stale && forKey({ data: value }))
+      .catch((err) => !stale && forKey({ error: String(err?.message ?? err) }));
     return () => {
       stale = true;
     };
@@ -109,5 +131,14 @@ export function usePreloaded<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  return { data, error };
+  const set = useCallback(
+    (value: T) => {
+      if (!key) return;
+      remember(key, value);
+      setHeld((h) => (h.key === key ? { ...h, data: value } : h));
+    },
+    [key],
+  );
+
+  return { data: current.data, error: current.error, set };
 }

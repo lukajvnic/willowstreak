@@ -8,6 +8,7 @@ from supabase import Client
 
 from app.core.errors import ApiError
 from app.modules.users.schemas import (
+    FriendOfData,
     PersonHitData,
     PublicGridData,
     PublicHabitData,
@@ -162,6 +163,20 @@ def search_users(client: Client, query: str, limit: int) -> list[PersonHitData]:
             message="Accounts could not be searched",
         ) from exc
     return [PersonHitData.model_validate(row) for row in (response.data or [])]
+
+
+def get_user_friends(client: Client, user_id: str) -> list[FriendOfData]:
+    """Someone's friends, through a security-definer RPC like the card. Only
+    you and your friends have a list to read; anyone else's is just empty."""
+    try:
+        response = client.rpc("get_user_friends", {"p_user_id": user_id}).execute()
+    except APIError as exc:
+        raise ApiError(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            code="user_friends_failed",
+            message="Friends could not be loaded",
+        ) from exc
+    return [FriendOfData.model_validate(row) for row in (response.data or [])]
 
 
 def get_user_card(client: Client, user_id: str) -> UserCardData:

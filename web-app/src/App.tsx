@@ -25,7 +25,7 @@ import {
 } from "./lib/habitsApi";
 import { stubOf } from "./lib/usersApi";
 import { useReminderAlerts } from "./lib/notify";
-import { KEYS, preloadAllTabs, preloadTab } from "./lib/pageData";
+import { KEYS, preloadAllTabs, preloadProfile, preloadTab } from "./lib/pageData";
 import { forgetAll, invalidate } from "./lib/preload";
 
 const NAV = ["habits", "to-do", "leaderboard", "social"];
@@ -42,6 +42,7 @@ export default function App() {
   const { photo, skin, worn } = useAvatarState();
 
   const token = session?.access_token;
+  const userId = session?.user.id;
   const me = profile !== null && profile !== "none" ? profile : null;
   const signedIn = Boolean(token) && me !== null;
   // polled here so the social tab's dot is right from any tab
@@ -68,14 +69,14 @@ export default function App() {
   const habitsReady = habits !== null;
   useEffect(() => {
     if (!habitsReady || !token) return;
-    const warm = () => preloadAllTabs(token);
+    const warm = () => preloadAllTabs(token, userId);
     if ("requestIdleCallback" in window) {
       const id = requestIdleCallback(warm, { timeout: 1500 });
       return () => cancelIdleCallback(id);
     }
     const id = setTimeout(warm, 300);
     return () => clearTimeout(id);
-  }, [habitsReady, token]);
+  }, [habitsReady, token, userId]);
 
   // clicking an alert brings you to the reminder it's about
   useReminderAlerts(signedIn ? token : undefined, () => setTab("to-do"));
@@ -83,10 +84,18 @@ export default function App() {
   if (!ready || (session && profile === null)) return null;
   if (!signedIn || !me) return <AuthGate />;
 
+  // your own profile shows your grids, so a saved change makes its cached copy stale
+  const habitsChanged = () => {
+    invalidate(KEYS.leaderboards);
+    if (userId) invalidate(KEYS.gridsOf(userId));
+  };
+
   const log = (habitId: string | undefined, date: Date, value: number) => {
     if (!habitId || !token) return;
     // optimistic — the grid already repainted from Heatmap's local edits
-    logEntry(token, habitId, date, value).catch((err) => console.error("entry save failed", err));
+    logEntry(token, habitId, date, value)
+      .then(habitsChanged)
+      .catch((err) => console.error("entry save failed", err));
     // a log can move you on a leaderboard — refetch it next time it's wanted
     invalidate(KEYS.leaderboards);
   };
@@ -115,7 +124,7 @@ export default function App() {
     const current = habits?.find((h) => h.habit.id === habitId)?.habit;
     if (!current) return;
     updateHabit(token, habitId, { ...edit, toggle: current.toggle })
-      .then(() => invalidate(KEYS.leaderboards))
+      .then(habitsChanged)
       .catch((err) => console.error("habit update failed", err));
   };
 
@@ -123,7 +132,7 @@ export default function App() {
     if (!token) return;
     setHabits((list) => (list ?? []).filter((h) => h.habit.id !== habitId));
     deleteHabit(token, habitId)
-      .then(() => invalidate(KEYS.leaderboards))
+      .then(habitsChanged)
       .catch((err) => console.error("habit delete failed", err));
   };
 
@@ -158,6 +167,8 @@ export default function App() {
           className="me"
           type="button"
           onClick={() => setShowMe(true)}
+          onPointerEnter={() => token && userId && preloadProfile(token, userId)}
+          onFocus={() => token && userId && preloadProfile(token, userId)}
           aria-label="your account"
         >
           <AvatarPreview tone={skin} photo={photo} head={worn.head} shirt={worn.shirt} size={34} crop />
@@ -211,6 +222,7 @@ export default function App() {
                   habit.ramp = RAMPS[rampName];
                 }
                 setHabits((list) => [...(list ?? []), { habit, entries: {} }]);
+                habitsChanged();
               })
               .catch((err) => console.error("habit create failed", err));
           }}

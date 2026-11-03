@@ -3,6 +3,7 @@ import AddReminder, { type Preset } from "./AddReminder";
 import Calendar from "./Calendar";
 import { useAuth } from "../lib/auth";
 import {
+  atOccurrence,
   covers,
   DEFAULT_CATEGORIES,
   fmtDay,
@@ -10,7 +11,6 @@ import {
   fmtTime,
   kindInfo,
   kindOrder,
-  nextOccurrence,
   repeatLabel,
   shiftKey,
   sortReminders,
@@ -26,6 +26,7 @@ import {
   deleteReminder,
   editReminder,
   loadTodos,
+  setDoneDates,
   setReminderDone,
 } from "../lib/todosApi";
 import { alertLabel, askPermission, usePermission } from "../lib/notify";
@@ -101,7 +102,8 @@ type RowProps = {
   category: Category | undefined;
   /** in one merged list the section headings are gone, so each row names its own kind */
   showKind: boolean;
-  onToggle: (id: string) => void;
+  /** gets the row as shown — for a repeating one, the occurrence it stands for */
+  onToggle: (r: Reminder) => void;
   onEdit: (r: Reminder) => void;
   onDrop: (id: string) => void;
 };
@@ -118,7 +120,7 @@ function Row({ r, category, showKind, onToggle, onEdit, onDrop }: RowProps) {
       <button
         className="check"
         type="button"
-        onClick={() => onToggle(r.id)}
+        onClick={() => onToggle(r)}
         aria-label={r.done ? "mark undone" : "mark done"}
         aria-pressed={r.done}
       >
@@ -256,23 +258,37 @@ export default function Todo() {
   // alerts set (maybe on another device) that this browser can't show yet
   const wantsAlerts = reminders.some((r) => r.kind === "anchor" && !r.done && r.alert != null);
 
-  let shown = selected ? reminders.filter((r) => covers(r, selected)) : reminders;
+  // a repeating reminder's row is one occurrence of it: the one on the picked
+  // day, or else today's (or the next one), with that occurrence's done state
+  const at = selected ?? todayKey();
+  let shown = (selected ? reminders.filter((r) => covers(r, selected)) : reminders).map((r) => atOccurrence(r, at));
   if (catFilter === UNCATEGORIZED) shown = shown.filter((r) => !r.categoryId);
   else if (catFilter) shown = shown.filter((r) => r.categoryId === catFilter);
   const open = shown.filter((r) => !r.done).length;
 
   const catOf = (r: Reminder) => categories.find((c) => c.id === r.categoryId);
 
-  const toggle = (id: string) => {
-    // like Apple's: ticking off a repeating one moves it on to its next date
-    // instead of finishing it — until the repeat runs out
-    const current = reminders.find((r) => r.id === id);
-    const next = current && !current.done ? nextOccurrence(current) : null;
-    if (current && next) return edit({ ...current, start: next.start, end: next.end ?? current.end });
+  // a row may be one occurrence — editing opens the reminder itself, from its first
+  const editRow = (row: Reminder) => setEditing(reminders.find((r) => r.id === row.id) ?? row);
 
-    const done = !current?.done;
-    setReminders((prev) => prev.map((r) => (r.id === id ? { ...r, done } : r)));
-    save((t) => setReminderDone(t, id, done));
+  const toggle = (row: Reminder) => {
+    const current = reminders.find((r) => r.id === row.id);
+    if (!current) return;
+
+    // a repeating one ticks off just the occurrence the row stands for — the
+    // rest of the series, and the calendar, stay as they were
+    if (current.repeat && row.start) {
+      const day = row.start;
+      const was = current.doneDates ?? [];
+      const doneDates = was.includes(day) ? was.filter((d) => d !== day) : [...was, day];
+      setReminders((prev) => prev.map((r) => (r.id === row.id ? { ...r, doneDates } : r)));
+      save((t) => setDoneDates(t, row.id, doneDates));
+      return;
+    }
+
+    const done = !current.done;
+    setReminders((prev) => prev.map((r) => (r.id === row.id ? { ...r, done } : r)));
+    save((t) => setReminderDone(t, row.id, done));
   };
 
   const edit = (next: Reminder) => {
@@ -295,7 +311,7 @@ export default function Todo() {
             <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <span className="rail-label">reminders</span>
-          <span className="rail-count">{reminders.filter((r) => !r.done).length}</span>
+          <span className="rail-count">{reminders.filter((r) => !atOccurrence(r, todayKey()).done).length}</span>
         </button>
       )}
 
@@ -442,7 +458,7 @@ export default function Todo() {
 
                   <ul className="reminder-list">
                     {group.map((r) => (
-                      <Row key={r.id} r={r} category={catOf(r)} showKind={false} onToggle={toggle} onEdit={setEditing} onDrop={drop} />
+                      <Row key={r.id} r={r} category={catOf(r)} showKind={false} onToggle={toggle} onEdit={editRow} onDrop={drop} />
                     ))}
                   </ul>
                 </div>
@@ -451,7 +467,7 @@ export default function Todo() {
           ) : (
             <ul className="reminder-list">
               {sortReminders(shown, sort).map((r) => (
-                <Row key={r.id} r={r} category={catOf(r)} showKind onToggle={toggle} onEdit={setEditing} onDrop={drop} />
+                <Row key={r.id} r={r} category={catOf(r)} showKind onToggle={toggle} onEdit={editRow} onDrop={drop} />
               ))}
             </ul>
           )}

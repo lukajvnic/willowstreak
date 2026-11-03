@@ -12,6 +12,7 @@ from app.modules.reminders.schemas import (
     ReminderData,
     ReminderEditRequest,
     ReminderShape,
+    ReminderUpdateRequest,
 )
 
 REMINDERS_TABLE = "reminders"
@@ -137,9 +138,14 @@ def _shape_row(payload: ReminderShape) -> dict[str, Any]:
 
 
 def set_reminder_done(
-    client: Client, user_id: str, reminder_id: str, done: bool
+    client: Client, user_id: str, reminder_id: str, payload: ReminderUpdateRequest
 ) -> ReminderData:
-    return _update(client, user_id, reminder_id, {"done": done})
+    # only what was sent — a one-off's toggle never touches done_dates, so it
+    # still works before that column's migration is applied
+    changes = payload.model_dump(mode="json", exclude_none=True)
+    if "done_dates" in changes:
+        changes["done_dates"] = sorted(set(changes["done_dates"]))
+    return _update(client, user_id, reminder_id, changes)
 
 
 def edit_reminder(

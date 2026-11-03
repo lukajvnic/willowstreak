@@ -38,7 +38,7 @@ def update_reminder_controller(
     current_user: CurrentUser, client: Client, reminder_id: str, payload: ReminderUpdateRequest
 ) -> ReminderResponse:
     return ReminderResponse(
-        reminder=set_reminder_done(client, current_user.id, reminder_id, payload.done)
+        reminder=set_reminder_done(client, current_user.id, reminder_id, payload)
     )
 
 

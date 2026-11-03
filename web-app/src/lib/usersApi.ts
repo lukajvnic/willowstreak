@@ -20,6 +20,8 @@ type ApiCard = AccountHit & {
   streak: number;
   best: number;
   tracked: number;
+  /** absent until the profile-friends migration is applied */
+  friends?: number;
 };
 
 /** enough of someone to open their profile on — the rest loads once it's open */
@@ -36,6 +38,7 @@ export type Person = PersonStub & {
   streak: number;
   best: number;
   tracked: number;
+  friends: number;
 };
 
 export function displayName(u: { first_name: string; last_name: string }): string {
@@ -131,5 +134,21 @@ export async function getUserCard(token: string, userId: string): Promise<Person
     streak: card.streak,
     best: card.best,
     tracked: card.tracked,
+    friends: card.friends ?? 0,
   };
+}
+
+/** one of someone's friends, and where you stand with them — "self" is you,
+ * in a friend's list */
+export type FriendOf = AccountHit & {
+  relation: Relation | "self";
+  mutual_friends: number;
+};
+
+/** someone's friends, by name. only yours and your friends' come back; anyone
+ * else's is empty */
+export async function getUserFriends(token: string, userId: string): Promise<FriendOf[]> {
+  const res = await api(`/api/users/${userId}/friends`, { token });
+  if (!res.ok) throw new Error(`friends load failed (${res.status})`);
+  return (res.data as { friends: FriendOf[] }).friends;
 }

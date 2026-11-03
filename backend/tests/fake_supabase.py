@@ -218,7 +218,10 @@ class _Rpc:
                 "avatar", "avatar_path", "created_at",
             )}
             card.setdefault("bio", "")
-            return _Response([{**card, **self._db.stats(target)}])
+            friends = len(self._db.graph().get(target, set()))
+            return _Response([{**card, **self._db.stats(target), "friends": friends}])
+        if self._name == "get_user_friends":
+            return _Response(self._db.friends_of(str(self._params["p_user_id"])))
         if self._name == "get_user_habits":
             target = str(self._params["p_user_id"])
             if target not in self._db.circle():
@@ -452,6 +455,23 @@ class FakeDB:
             if f["status"] == "accepted" and me in pair:
                 mine |= pair
         return mine
+
+    def friends_of(self, target: str) -> list[dict]:
+        """Same as get_user_friends(): the target's friends, with where the
+        caller stands with each, and only for the caller's circle."""
+        if target not in self.circle():
+            return []
+        me = str(self.current_user_id)
+        rows = []
+        for uid in self.graph().get(target, set()):
+            user = next(u for u in self.tables["users"] if str(u["id"]) == uid)
+            rows.append({
+                **self._public(user),
+                "relation": "self" if uid == me else self.relation(uid),
+                "mutual_friends": 0 if uid == me else self.mutual(uid),
+            })
+        rows.sort(key=lambda r: (f"{r['first_name']} {r['last_name']}".strip().lower(), r["username"]))
+        return rows
 
     def friendships(self) -> list[dict]:
         """Same shape as get_friendships(): the caller's rows, each with the

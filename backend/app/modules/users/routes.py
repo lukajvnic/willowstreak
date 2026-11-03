@@ -15,6 +15,7 @@ from app.modules.users.controller import (
     search_users_controller,
     update_me_controller,
     user_card_controller,
+    user_friends_controller,
     user_grids_controller,
     user_habits_controller,
     username_available_controller,
@@ -22,6 +23,7 @@ from app.modules.users.controller import (
 from app.modules.users.schemas import (
     UserCardResponse,
     UserCreateRequest,
+    UserFriendsResponse,
     UserGridsResponse,
     UserHabitsResponse,
     UsernameAvailableResponse,
@@ -91,6 +93,15 @@ def user_card(
     client: Annotated[Client, Depends(get_current_user_client)],
 ) -> UserCardResponse:
     return user_card_controller(client=client, user_id=str(user_id))
+
+
+@router.get("/users/{user_id}/friends", response_model=UserFriendsResponse)
+def user_friends(
+    user_id: UUID,
+    client: Annotated[Client, Depends(get_current_user_client)],
+) -> UserFriendsResponse:
+    # yours or a friend's; anyone else's comes back empty, like their grids
+    return user_friends_controller(client=client, user_id=str(user_id))
 
 
 @router.get("/users/{user_id}/habits", response_model=UserGridsResponse | UserHabitsResponse)

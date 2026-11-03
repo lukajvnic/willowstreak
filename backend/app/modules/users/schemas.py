@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -45,7 +46,8 @@ class AvatarLook(BaseModel):
 class UserUpdateRequest(BaseModel):
     first_name: str | None = Field(default=None, min_length=1, max_length=40)
     last_name: str | None = Field(default=None, max_length=40)
-    bio: str | None = None
+    # the line under your name on your profile
+    bio: str | None = Field(default=None, max_length=160)
     avatar: AvatarLook | None = None
     # null clears the photo; a path must sit in the caller's own folder
     avatar_path: str | None = Field(default=None, max_length=255)
@@ -87,6 +89,18 @@ class UserSearchResponse(BaseModel):
     users: list[PersonHitData]
 
 
+class FriendOfData(PublicUserData):
+    """get_user_friends(): one of someone's friends, plus where you stand with
+    them. 'self' is you, in a friend's list."""
+
+    relation: Relation | Literal["self"]
+    mutual_friends: int
+
+
+class UserFriendsResponse(BaseModel):
+    friends: list[FriendOfData]
+
+
 class UserCardData(PublicUserData):
     """The full profile card: public fields plus activity numbers. No habit
     names or entries — the card shows that someone is active, not what they do."""
@@ -96,6 +110,8 @@ class UserCardData(PublicUserData):
     streak: int
     best: int
     tracked: int
+    # absent until the profile-friends migration is applied
+    friends: int = 0
 
 
 class UserCardResponse(BaseModel):

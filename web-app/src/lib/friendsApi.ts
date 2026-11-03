@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { useAuth } from "./auth";
 import { KEYS } from "./pageData";
-import { invalidate, peek, preload } from "./preload";
+import { invalidate, invalidatePrefix, peek, preload } from "./preload";
 import type { AccountHit } from "./usersApi";
 
 export type Friends = {
@@ -101,6 +101,8 @@ export async function changeFriendship(token: string, change: Change, id: string
   invalidate(KEYS.feed);
   invalidate(KEYS.bubbles);
   invalidate(KEYS.friends);
+  // and every cached friends list: relations and mutual counts just moved
+  invalidatePrefix(KEYS.friendsOf(""));
   await pull(token).catch((err) => console.error("friends load failed", err));
 }
 

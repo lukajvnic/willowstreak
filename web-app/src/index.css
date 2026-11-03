@@ -1963,39 +1963,162 @@ button.search-hit:hover { background: rgba(255, 255, 255, 0.08); }
 
 .modal-close:hover { color: var(--ink); }
 
+/* one centered column: avatar, name, the handle / joined / friends line, bio */
 .profile-head {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 22px;
+  text-align: center;
+  margin-bottom: 24px;
 }
 
+/* the whole standing figure, not the round headshot */
+.profile-figure,
 .profile-avatar-btn {
   flex: none;
-  width: 64px;
-  height: 64px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  overflow: hidden;
-  background: transparent;
-  cursor: pointer;
+  display: block;
+  margin-bottom: 12px;
   line-height: 0;
-  box-shadow: 0 0 0 1px var(--line);
-  transition: box-shadow 140ms ease, transform 140ms ease;
+  /* same soft glow as the leaderboard plinth, so he lifts off the grey card */
+  filter:
+    drop-shadow(0 0 5px rgba(255, 255, 255, 0.55))
+    drop-shadow(0 0 16px rgba(255, 255, 255, 0.32));
 }
 
-.profile-avatar-btn svg { display: block; width: 100%; height: 100%; }
+.profile-figure svg,
+.profile-avatar-btn svg { display: block; }
 
+.profile-avatar-btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transition: filter 140ms ease, transform 140ms ease;
+}
+
+/* yours opens the editor: a glow round the figure itself says so */
 .profile-avatar-btn:hover {
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3), 0 0 14px 2px rgba(255, 255, 255, 0.28);
+  filter:
+    drop-shadow(0 0 7px rgba(255, 255, 255, 0.7))
+    drop-shadow(0 0 22px rgba(255, 255, 255, 0.42));
 }
 
 .profile-avatar-btn:active { transform: scale(0.96); }
 
-.profile-name { margin: 0; font-size: 19px; font-weight: 550; letter-spacing: -0.01em; }
-.profile-handle { margin: 2px 0 0; font-size: 13px; color: var(--ink-faint); }
-.profile-bio { margin: 7px 0 0; font-size: 13px; color: var(--ink-soft); }
+.profile-name { margin: 0; font-size: 21px; font-weight: 550; letter-spacing: -0.01em; }
+
+.profile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 4px 7px;
+  margin: 5px 0 0;
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+
+.profile-friends {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.profile-friends b { font-weight: 600; color: var(--ink); }
+.profile-friends:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+
+.profile-bio {
+  max-width: 380px;
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+/* your own bio is the button that edits it */
+.profile-bio-edit {
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  cursor: text;
+}
+
+.profile-bio-edit:hover { border-color: var(--line); }
+.profile-bio-edit[data-empty="true"] { color: var(--ink-faint); font-style: italic; }
+
+.profile-bio-input {
+  width: 100%;
+  max-width: 380px;
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: var(--dune);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: center;
+  resize: none;
+  outline: none;
+}
+
+.profile-head .new-delete { margin-top: 14px; }
+
+.profile-empty { margin: 0; text-align: center; font-size: 13px; color: var(--ink-faint); }
+
+/* ---------- friends list, over a profile ---------- */
+
+.scrim-top { z-index: 41; }
+
+.friends-modal { max-width: 420px; padding: 22px 20px 14px; }
+
+.friends-title {
+  margin: 0 0 16px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.friends-rows {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  max-height: min(420px, 60vh);
+  overflow-y: auto;
+}
+
+.friend-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.friend-row { cursor: pointer; transition: background 130ms ease; }
+button.friend-row:hover { background: rgba(255, 255, 255, 0.06); }
+
+.friend-row .ac-btn { flex: none; padding: 7px 14px; font-size: 13px; }
+.friend-row .ac-btn[data-quiet] { background: rgba(255, 255, 255, 0.03); color: var(--ink-soft); }
+.friend-row .friends-mark { font-size: 13px; }
+
+.friends-you { flex: none; padding: 0 6px; font-size: 13px; color: var(--ink-faint); }
+
+.friends-empty { padding: 22px 0; text-align: center; font-size: 13px; color: var(--ink-faint); }
 
 
 .stats {
