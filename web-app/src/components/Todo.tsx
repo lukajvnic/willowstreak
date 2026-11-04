@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import AddReminder, { type Preset } from "./AddReminder";
 import Calendar from "./Calendar";
+import ManageCategories from "./ManageCategories";
 import { useAuth } from "../lib/auth";
 import {
   atOccurrence,
@@ -23,7 +24,9 @@ import {
 import {
   createCategory,
   createReminder,
+  deleteCategory,
   deleteReminder,
+  editCategory,
   editReminder,
   loadTodos,
   setDoneDates,
@@ -185,10 +188,8 @@ export default function Todo() {
   // the last save that didn't go through, said out loud — otherwise the reload
   // below just makes the reminder vanish with no hint why
   const [saveError, setSaveError] = useState("");
-  const [categories, setCategories] = useState<Category[]>([
-    ...DEFAULT_CATEGORIES,
-    ...(cached?.categories ?? []),
-  ]);
+  const [categories, setCategories] = useState<Category[]>(cached?.categories ?? DEFAULT_CATEGORIES);
+  const [managing, setManaging] = useState(false);
   const reminders = loaded ?? [];
   const setReminders = (change: (prev: Reminder[]) => Reminder[]) =>
     setLoaded((prev) => change(prev ?? []));
@@ -200,7 +201,7 @@ export default function Todo() {
     preload(KEYS.todos, () => loadTodos(token))
       .then((todos) => {
         setLoaded(todos.reminders);
-        setCategories([...DEFAULT_CATEGORIES, ...todos.categories]);
+        setCategories(todos.categories);
       })
       .catch((err) => setLoadError(String(err.message ?? err)));
   };
@@ -213,8 +214,7 @@ export default function Todo() {
   // back to the tab then shows them, not the copy from before they were made
   useEffect(() => {
     if (loaded === null) return;
-    const own = categories.filter((c) => !DEFAULT_CATEGORIES.some((d) => d.id === c.id));
-    remember<Todos>(KEYS.todos, { reminders: loaded, categories: own });
+    remember<Todos>(KEYS.todos, { reminders: loaded, categories });
   }, [loaded, categories]);
 
   // every change shows straight away and saves behind it. if a save fails, the
@@ -229,6 +229,10 @@ export default function Todo() {
         reload(true);
       },
     );
+  };
+  const addCategory = (c: Category) => {
+    setCategories((prev) => [...prev, c]);
+    save((t) => createCategory(t, c));
   };
   const [selected, setSelected] = useState<string | null>(null);
   const [catFilter, setCatFilter] = useState<string | null>(null);
@@ -407,6 +411,7 @@ export default function Todo() {
             >
               <span className="cat-chip-icon">{c.icon}</span>
               {c.name}
+              <i className="cat-dot" style={{ "--cat": c.color } as React.CSSProperties} />
             </button>
           ))}
 
@@ -417,6 +422,16 @@ export default function Todo() {
             onClick={() => setCatFilter((cur) => (cur === UNCATEGORIZED ? null : UNCATEGORIZED))}
           >
             uncategorized
+          </button>
+
+          <button
+            type="button"
+            className="cat-chip cat-chip-edit"
+            onClick={() => setManaging(true)}
+            aria-label="edit categories"
+            title="edit categories"
+          >
+            edit
           </button>
         </div>
 
@@ -476,6 +491,7 @@ export default function Todo() {
 
       <Calendar
         reminders={reminders}
+        categories={categories}
         selected={selected}
         onSelect={setSelected}
         onResize={(r, minutes) => edit({ ...r, duration: minutes })}
@@ -498,15 +514,35 @@ export default function Todo() {
             setReminders((prev) => [...prev, r]);
             save((t) => createReminder(t, r));
           }}
-          onCreateCategory={(c) => {
-            setCategories((prev) => [...prev, c]);
-            save((t) => createCategory(t, c));
-          }}
+          onCreateCategory={addCategory}
           onClose={() => {
             setAdding(false);
             setEditing(null);
             setPreset(null);
           }}
+        />
+      )}
+
+      {managing && (
+        <ManageCategories
+          categories={categories}
+          counts={reminders.reduce<Record<string, number>>((n, r) => {
+            if (r.categoryId) n[r.categoryId] = (n[r.categoryId] ?? 0) + 1;
+            return n;
+          }, {})}
+          onCreate={addCategory}
+          onEdit={(c) => {
+            setCategories((prev) => prev.map((x) => (x.id === c.id ? c : x)));
+            save((t) => editCategory(t, c));
+          }}
+          onDelete={(id) => {
+            setCategories((prev) => prev.filter((x) => x.id !== id));
+            // the server takes it off its reminders too
+            setReminders((prev) => prev.map((r) => (r.categoryId === id ? { ...r, categoryId: undefined } : r)));
+            if (catFilter === id) setCatFilter(null);
+            save((t) => deleteCategory(t, id));
+          }}
+          onClose={() => setManaging(false)}
         />
       )}
     </div>

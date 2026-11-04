@@ -11,6 +11,7 @@ import {
   MIN_DURATION,
   minutesOf,
   monthName,
+  nextColor,
   parseKey,
   repeatsFor,
   shiftKey,
@@ -251,7 +252,8 @@ export default function AddReminder({ categories, initial, preset, onAdd, onCrea
   function commitCategory() {
     const name = newName.trim();
     if (!name) return newNameRef.current?.focus();
-    const c: Category = { id: crypto.randomUUID(), name, icon: newIcon.trim() || LABEL_TAG };
+    // it gets the next free colour; the categories editor can change it
+    const c: Category = { id: crypto.randomUUID(), name, icon: newIcon.trim() || LABEL_TAG, color: nextColor(categories) };
     onCreateCategory(c);
     setCategory(c.id);
     setNewIcon("");
@@ -292,6 +294,7 @@ export default function AddReminder({ categories, initial, preset, onAdd, onCrea
             >
               <span className="cat-pick-icon">{c.icon}</span>
               {c.name}
+              <i className="cat-dot" style={{ "--cat": c.color } as React.CSSProperties} />
             </button>
           ))}
 

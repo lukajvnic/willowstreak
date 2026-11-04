@@ -128,10 +128,22 @@ class ReminderResponse(BaseModel):
     reminder: ReminderData
 
 
+# the categories every user starts with — they live in the client, and a
+# reminder points at one by this slug
+BUILTIN_CATEGORIES = ("school", "work", "exercise", "chores", "health")
+
+HEX_COLOR = r"^#[0-9A-Fa-f]{6}$"
+
+
 class CategoryData(BaseModel):
     id: UUID
     name: str
     icon: str = ""
+    color: str | None = None
+    # set on a row that overrides a built-in category, by its slug
+    builtin: str | None = None
+    # a removed built-in
+    hidden: bool = False
     created_at: datetime | None = None
 
 
@@ -139,6 +151,15 @@ class CategoryCreateRequest(BaseModel):
     id: UUID | None = None
     name: str = Field(min_length=1, max_length=24)
     icon: str = Field(default="", max_length=16)
+    color: str | None = Field(default=None, pattern=HEX_COLOR)
+
+
+class CategoryEditRequest(BaseModel):
+    """A full rewrite of what a category says — one of yours, or a built-in."""
+
+    name: str = Field(min_length=1, max_length=24)
+    icon: str = Field(default="", max_length=16)
+    color: str = Field(pattern=HEX_COLOR)
 
 
 class CategoryResponse(BaseModel):
@@ -147,7 +168,7 @@ class CategoryResponse(BaseModel):
 
 class RemindersResponse(BaseModel):
     """The whole to-do tab in one response: reminders plus the caller's own
-    categories (the built-in ones live in the client)."""
+    categories and overrides of the built-in ones (which live in the client)."""
 
     reminders: list[ReminderData]
     categories: list[CategoryData]

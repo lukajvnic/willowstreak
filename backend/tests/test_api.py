@@ -886,14 +886,67 @@ def test_reminder_categories(client, sign_in):
     cid = str(_uuid.uuid4())
     r = client.post("/api/reminder-categories", json={"id": cid, "name": "garden", "icon": "🌱"})
     assert r.status_code == 201 and r.json()["category"] == {
-        "id": cid, "name": "garden", "icon": "🌱", "created_at": r.json()["category"]["created_at"],
+        "id": cid, "name": "garden", "icon": "🌱", "color": None, "builtin": None, "hidden": False,
+        "created_at": r.json()["category"]["created_at"],
     }
     assert client.post("/api/reminder-categories", json={"name": ""}).status_code == 422
+    assert client.post("/api/reminder-categories", json={"name": "x", "color": "red"}).status_code == 422
     assert [c["id"] for c in client.get("/api/reminders").json()["categories"]] == [cid]
 
     other = sign_in()
     register(other, "other")
     assert other.get("/api/reminders").json()["categories"] == []
+    # someone else's category can't be edited or removed
+    body = {"name": "mine", "icon": "", "color": "#112233"}
+    assert other.put(f"/api/reminder-categories/{cid}", json=body).status_code == 404
+    assert other.delete(f"/api/reminder-categories/{cid}").status_code == 404
+
+
+def test_edit_and_delete_categories(client, sign_in):
+    register(client, "luka")
+    import uuid as _uuid
+
+    cid = str(_uuid.uuid4())
+    client.post("/api/reminder-categories", json={"id": cid, "name": "garden", "color": "#5FA46B"})
+    r = client.put(f"/api/reminder-categories/{cid}", json={"name": "yard", "icon": "🌳", "color": "#D96C6C"})
+    assert r.status_code == 200
+    assert {k: r.json()["category"][k] for k in ("id", "name", "icon", "color")} == {
+        "id": cid, "name": "yard", "icon": "🌳", "color": "#D96C6C",
+    }
+    bad = client.put(f"/api/reminder-categories/{cid}", json={"name": "yard", "color": "#zzz"})
+    assert bad.status_code == 422
+    assert client.put("/api/reminder-categories/nope", json={"name": "a", "color": "#000000"}).status_code == 404
+
+    # a built-in is edited through an override row, written again on a second edit
+    r = client.put("/api/reminder-categories/work", json={"name": "job", "icon": "💼", "color": "#123456"})
+    assert r.status_code == 200 and r.json()["category"]["builtin"] == "work"
+    client.put("/api/reminder-categories/work", json={"name": "career", "icon": "💼", "color": "#654321"})
+    rows = client.get("/api/reminders").json()["categories"]
+    work = [c for c in rows if c["builtin"] == "work"]
+    assert len(work) == 1 and work[0]["name"] == "career" and work[0]["color"] == "#654321"
+
+    # removing a category leaves its reminders, just without it
+    def anchor(category):
+        rid = str(_uuid.uuid4())
+        client.post("/api/reminders", json={
+            "id": rid, "title": "t", "kind": "refile", "category_id": category,
+        })
+        return rid
+
+    a, b, c = anchor(cid), anchor("health"), anchor("school")
+    assert client.delete(f"/api/reminder-categories/{cid}").status_code == 204
+    assert client.delete(f"/api/reminder-categories/{cid}").status_code == 404
+    assert client.delete("/api/reminder-categories/health").status_code == 204
+    listed = client.get("/api/reminders").json()
+    by_id = {r["id"]: r["category_id"] for r in listed["reminders"]}
+    assert by_id == {a: None, b: None, c: "school"}
+    assert [x["builtin"] for x in listed["categories"] if x["hidden"]] == ["health"]
+    assert all(x["id"] != cid for x in listed["categories"])
+
+    # editing a removed built-in brings it back
+    client.put("/api/reminder-categories/health", json={"name": "health", "icon": "", "color": "#D96C6C"})
+    health = [x for x in client.get("/api/reminders").json()["categories"] if x["builtin"] == "health"]
+    assert health[0]["hidden"] is False
 
 
 # ----------------------------------------------------------------- friends

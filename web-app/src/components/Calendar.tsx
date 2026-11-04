@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  colorOf,
   covers,
   doneAt,
   doneOn,
@@ -8,7 +9,6 @@ import {
   fmtDay,
   fmtTime,
   keyOf,
-  kindInfo,
   minutesOf,
   monthGrid,
   monthName,
@@ -17,12 +17,16 @@ import {
   shiftKey,
   timeOf,
   todayKey,
+  UNCATEGORIZED_COLOR,
+  type Category,
   type Reminder,
 } from "../lib/todos";
 import type { Preset } from "./AddReminder";
 
 type Props = {
   reminders: Reminder[];
+  /** each reminder is drawn in its category's colour */
+  categories: Category[];
   selected: string | null;
   onSelect: (key: string | null) => void;
   /** an anchor's bottom edge was dragged to a new length, in minutes */
@@ -73,7 +77,7 @@ function place(list: Reminder[], lengthOf: (r: Reminder) => number): { placed: P
   return { placed, lanes: Math.max(1, ends.length) };
 }
 
-export default function Calendar({ reminders, selected, onSelect, onResize, onCreate }: Props) {
+export default function Calendar({ reminders, categories, selected, onSelect, onResize, onCreate }: Props) {
   const today = todayKey();
   const [view, setView] = useState<View>("week");
   const [cursor, setCursor] = useState(today);
@@ -301,7 +305,7 @@ export default function Calendar({ reminders, selected, onSelect, onResize, onCr
                                     : "mid"
                             }
                             data-done={doneAt(r, occ.start)}
-                            style={{ "--tone": kindInfo(r.kind).tone } as React.CSSProperties}
+                            style={{ "--tone": colorOf(r, categories) } as React.CSSProperties}
                           />
                         );
                       })}
@@ -311,7 +315,7 @@ export default function Calendar({ reminders, selected, onSelect, onResize, onCr
                           className="day-chip"
                           key={r.id}
                           data-done={doneOn(r, key)}
-                          style={{ "--tone": kindInfo(r.kind).tone } as React.CSSProperties}
+                          style={{ "--tone": colorOf(r, categories) } as React.CSSProperties}
                         >
                           <i />
                           {r.time && <b>{fmtTime(r.time)}</b>}
@@ -362,7 +366,7 @@ export default function Calendar({ reminders, selected, onSelect, onResize, onCr
                       data-open-left={occ.start < days[0]}
                       data-open-right={occ.end > days[days.length - 1]}
                       style={{
-                        "--tone": kindInfo(r.kind).tone,
+                        "--tone": colorOf(r, categories),
                         gridColumn: `${from + 1} / ${to + 2}`,
                         gridRow: row + 1,
                       } as React.CSSProperties}
@@ -406,7 +410,7 @@ export default function Calendar({ reminders, selected, onSelect, onResize, onCr
                             data-done={doneOn(r, key)}
                             data-stretching={stretch?.id === r.id}
                             style={{
-                              "--tone": kindInfo(r.kind).tone,
+                              "--tone": colorOf(r, categories),
                               top: `${(start / 60) * HOUR_H}px`,
                               height: `${(length / 60) * HOUR_H - 2}px`,
                               left: `calc(${(lane / lanes) * 100}% + 2px)`,
@@ -437,7 +441,7 @@ export default function Calendar({ reminders, selected, onSelect, onResize, onCr
                           className="event event-sketch"
                           aria-hidden
                           style={{
-                            "--tone": kindInfo("anchor").tone,
+                            "--tone": UNCATEGORIZED_COLOR,
                             top: `${(sketch.start / 60) * HOUR_H}px`,
                             height: `${(sketch.minutes / 60) * HOUR_H - 2}px`,
                             left: "2px",

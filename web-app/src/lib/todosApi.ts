@@ -6,7 +6,7 @@ function failure(what: string, res: ApiCall): Error {
   const message = (res.data as { error?: { message?: string } } | null)?.error?.message;
   return new Error(message ? `${what}: ${message}` : `${what} (${res.status})`);
 }
-import type { Category, Reminder } from "./todos";
+import { CATEGORY_COLORS, DEFAULT_CATEGORIES, type Category, type Reminder } from "./todos";
 
 /** rows as the backend returns them */
 type ApiReminder = {
@@ -50,16 +50,50 @@ function toReminder(row: ApiReminder): Reminder {
   };
 }
 
-/** the whole to-do tab: your reminders and the categories you've made */
+/** category rows as the backend returns them: one you made, or (with `builtin`
+ * set) your changes to a built-in one. `color` / `builtin` / `hidden` are
+ * absent until the colours migration is applied */
+type ApiCategory = {
+  id: string;
+  name: string;
+  icon: string;
+  color?: string | null;
+  builtin?: string | null;
+  hidden?: boolean;
+};
+
+/** a colour for a category saved before colours existed — steady per id */
+function fallbackColor(id: string): string {
+  let h = 0;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0;
+  return CATEGORY_COLORS[Math.abs(h) % CATEGORY_COLORS.length];
+}
+
+/** the built-ins, each with your changes laid over it (or gone, if you removed
+ * it), followed by the ones you made */
+function mergeCategories(rows: ApiCategory[]): Category[] {
+  const builtins = DEFAULT_CATEGORIES.flatMap((d) => {
+    const o = rows.find((r) => r.builtin === d.id);
+    if (!o) return [d];
+    if (o.hidden) return [];
+    return [{ id: d.id, name: o.name, icon: o.icon, color: o.color ?? d.color }];
+  });
+  const own = rows
+    .filter((r) => !r.builtin)
+    .map((r) => ({ id: r.id, name: r.name, icon: r.icon, color: r.color ?? fallbackColor(r.id) }));
+  return [...builtins, ...own];
+}
+
+/** the whole to-do tab: your reminders and every category you have */
 export async function loadTodos(
   token: string,
 ): Promise<{ reminders: Reminder[]; categories: Category[] }> {
   const res = await api("/api/reminders", { token });
   if (!res.ok) throw failure("reminders load failed", res);
-  const data = res.data as { reminders: ApiReminder[]; categories: Category[] };
+  const data = res.data as { reminders: ApiReminder[]; categories: ApiCategory[] };
   return {
     reminders: data.reminders.map(toReminder),
-    categories: data.categories.map(({ id, name, icon }) => ({ id, name, icon })),
+    categories: mergeCategories(data.categories),
   };
 }
 
@@ -122,4 +156,17 @@ export async function deleteReminder(token: string, id: string): Promise<void> {
 export async function createCategory(token: string, c: Category): Promise<void> {
   const res = await api("/api/reminder-categories", { method: "POST", token, body: c });
   if (!res.ok) throw failure("category save failed", res);
+}
+
+/** rewrites a category's name, icon and colour — a built-in one included */
+export async function editCategory(token: string, c: Category): Promise<void> {
+  const body = { name: c.name, icon: c.icon, color: c.color };
+  const res = await api(`/api/reminder-categories/${c.id}`, { method: "PUT", token, body });
+  if (!res.ok) throw failure("category save failed", res);
+}
+
+/** removes a category; its reminders stay, without one */
+export async function deleteCategory(token: string, id: string): Promise<void> {
+  const res = await api(`/api/reminder-categories/${id}`, { method: "DELETE", token });
+  if (!res.ok) throw failure("category delete failed", res);
 }

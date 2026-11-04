@@ -3,6 +3,7 @@ from supabase import Client
 from app.core.auth import CurrentUser
 from app.modules.reminders.schemas import (
     CategoryCreateRequest,
+    CategoryEditRequest,
     CategoryResponse,
     ReminderCreateRequest,
     ReminderEditRequest,
@@ -12,6 +13,8 @@ from app.modules.reminders.schemas import (
 )
 from app.modules.reminders.service import (
     create_category,
+    delete_category,
+    edit_category,
     create_reminder,
     delete_reminder,
     edit_reminder,
@@ -60,3 +63,15 @@ def create_category_controller(
     current_user: CurrentUser, client: Client, payload: CategoryCreateRequest
 ) -> CategoryResponse:
     return CategoryResponse(category=create_category(client, current_user.id, payload))
+
+
+def edit_category_controller(
+    current_user: CurrentUser, client: Client, category_id: str, payload: CategoryEditRequest
+) -> CategoryResponse:
+    return CategoryResponse(
+        category=edit_category(client, current_user.id, category_id, payload)
+    )
+
+
+def delete_category_controller(current_user: CurrentUser, client: Client, category_id: str) -> None:
+    delete_category(client, current_user.id, category_id)

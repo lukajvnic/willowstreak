@@ -9,13 +9,16 @@ from app.core.dependencies import get_current_user_client
 from app.modules.reminders.controller import (
     create_category_controller,
     create_reminder_controller,
+    delete_category_controller,
     delete_reminder_controller,
+    edit_category_controller,
     edit_reminder_controller,
     list_reminders_controller,
     update_reminder_controller,
 )
 from app.modules.reminders.schemas import (
     CategoryCreateRequest,
+    CategoryEditRequest,
     CategoryResponse,
     ReminderCreateRequest,
     ReminderEditRequest,
@@ -89,3 +92,26 @@ def create_category(
     client: Annotated[Client, Depends(get_current_user_client)],
 ) -> CategoryResponse:
     return create_category_controller(current_user=current_user, client=client, payload=payload)
+
+
+# `category_id` is a uuid for one you made, or a built-in's slug ("school"...)
+@router.put("/reminder-categories/{category_id}", response_model=CategoryResponse)
+def edit_category(
+    category_id: str,
+    payload: CategoryEditRequest,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    client: Annotated[Client, Depends(get_current_user_client)],
+) -> CategoryResponse:
+    return edit_category_controller(
+        current_user=current_user, client=client, category_id=category_id, payload=payload
+    )
+
+
+@router.delete("/reminder-categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_category(
+    category_id: str,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    client: Annotated[Client, Depends(get_current_user_client)],
+) -> Response:
+    delete_category_controller(current_user=current_user, client=client, category_id=category_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

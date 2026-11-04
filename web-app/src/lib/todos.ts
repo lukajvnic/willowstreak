@@ -37,7 +37,37 @@ export type Category = {
   name: string;
   /** a single emoji, picked freehand — no fixed set to choose from */
   icon: string;
+  /** #RRGGBB — the calendar draws the category's reminders in it */
+  color: string;
 };
+
+/** the swatches offered when picking a category's colour (any hex still works) */
+export const CATEGORY_COLORS = [
+  "#6C9BD0", // blue
+  "#9B7FD1", // violet
+  "#5FA46B", // green
+  "#D9A93A", // amber
+  "#D96C6C", // red
+  "#D98A4E", // orange
+  "#4FB0A8", // teal
+  "#D07BAA", // pink
+  "#A3B15A", // olive
+  "#8B8681", // stone
+];
+
+/** what a reminder with no category is drawn in */
+export const UNCATEGORIZED_COLOR = "#8B8681";
+
+/** a colour for a new category: the first swatch nobody's using yet */
+export function nextColor(taken: Category[]): string {
+  const used = new Set(taken.map((c) => c.color.toLowerCase()));
+  return CATEGORY_COLORS.find((c) => !used.has(c.toLowerCase())) ?? CATEGORY_COLORS[taken.length % CATEGORY_COLORS.length];
+}
+
+/** the colour a reminder is drawn in on the calendar */
+export function colorOf(r: Reminder, categories: Category[]): string {
+  return categories.find((c) => c.id === r.categoryId)?.color ?? UNCATEGORIZED_COLOR;
+}
 
 // written as escaped code points rather than literal glyphs — some emoji
 // (multi-byte astral-plane characters) don't survive being typed straight
@@ -53,12 +83,14 @@ export const LABEL_TAG = "\u{1F3F7}\u{FE0F}"; // 🏷️ — default icon for a 
 /** the categories everyone starts with. they live here, not in the database —
  * a reminder points at one by its slug, and at one you made by its uuid */
 export const DEFAULT_CATEGORIES: Category[] = [
-  { id: "school", name: "school", icon: GRADUATION_CAP },
-  { id: "work", name: "work", icon: BRIEFCASE },
-  { id: "exercise", name: "exercise", icon: FLEXED_BICEPS },
-  { id: "chores", name: "chores", icon: BROOM },
-  { id: "health", name: "health", icon: HOSPITAL },
+  { id: "school", name: "school", icon: GRADUATION_CAP, color: "#6C9BD0" },
+  { id: "work", name: "work", icon: BRIEFCASE, color: "#9B7FD1" },
+  { id: "exercise", name: "exercise", icon: FLEXED_BICEPS, color: "#5FA46B" },
+  { id: "chores", name: "chores", icon: BROOM, color: "#D9A93A" },
+  { id: "health", name: "health", icon: HOSPITAL, color: "#D96C6C" },
 ];
+
+export const isBuiltin = (id: string) => DEFAULT_CATEGORIES.some((c) => c.id === id);
 
 export type KindInfo = {
   id: Kind;

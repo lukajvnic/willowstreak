@@ -1,4 +1,5 @@
 from typing import Any
+from uuid import UUID
 
 from fastapi import status
 from postgrest import APIError
@@ -6,8 +7,10 @@ from supabase import Client
 
 from app.core.errors import ApiError
 from app.modules.reminders.schemas import (
+    BUILTIN_CATEGORIES,
     CategoryCreateRequest,
     CategoryData,
+    CategoryEditRequest,
     ReminderCreateRequest,
     ReminderData,
     ReminderEditRequest,
@@ -211,4 +214,104 @@ def create_category(
     client: Client, user_id: str, payload: CategoryCreateRequest
 ) -> CategoryData:
     row = {"user_id": user_id, **payload.model_dump(mode="json")}
+    # left out when there isn't one, so a database without the colour column
+    # still files the rest
+    if row.get("color") is None:
+        row.pop("color", None)
     return CategoryData.model_validate(_insert(client, CATEGORIES_TABLE, row, "category"))
+
+
+def _category_not_found() -> ApiError:
+    return ApiError(
+        status_code=status.HTTP_404_NOT_FOUND,
+        code="category_not_found",
+        message="Category not found",
+    )
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _category_failed(exc: APIError, what: str) -> ApiError:
+    if exc.code == POSTGREST_UNKNOWN_COLUMN:
+        return _schema_behind(exc)
+    if exc.code == POSTGRES_CHECK_VIOLATION:
+        return ApiError(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            code="category_invalid",
+            message="That category isn't valid",
+        )
+    return ApiError(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        code=f"category_{what}_failed",
+        message=f"The category could not be {what}d",
+    )
+
+
+def _override_builtin(client: Client, user_id: str, slug: str, changes: dict[str, Any]) -> dict:
+    """A built-in category lives in the client; changing it writes (or rewrites)
+    this user's override row for it."""
+    row = {"user_id": user_id, "builtin": slug, **changes}
+    response = client.table(CATEGORIES_TABLE).upsert(row, on_conflict="user_id,builtin").execute()
+    return response.data[0]
+
+
+def edit_category(
+    client: Client, user_id: str, category_id: str, payload: CategoryEditRequest
+) -> CategoryData:
+    changes = payload.model_dump(mode="json")
+    try:
+        if category_id in BUILTIN_CATEGORIES:
+            row = _override_builtin(client, user_id, category_id, {**changes, "hidden": False})
+            return CategoryData.model_validate(row)
+        if not _is_uuid(category_id):
+            raise _category_not_found()
+        response = (
+            client.table(CATEGORIES_TABLE)
+            .update(changes)
+            .eq("id", category_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+    except APIError as exc:
+        raise _category_failed(exc, "update") from exc
+    if not response.data:
+        raise _category_not_found()
+    return CategoryData.model_validate(response.data[0])
+
+
+def delete_category(client: Client, user_id: str, category_id: str) -> None:
+    """Removes the category and takes it off every reminder that had it — the
+    reminders themselves stay, uncategorized."""
+    try:
+        if category_id in BUILTIN_CATEGORIES:
+            # the name is only there for a first insert, which needs one
+            _override_builtin(
+                client, user_id, category_id, {"name": category_id, "hidden": True}
+            )
+        elif not _is_uuid(category_id):
+            raise _category_not_found()
+        else:
+            response = (
+                client.table(CATEGORIES_TABLE)
+                .delete()
+                .eq("id", category_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+            if not response.data:
+                raise _category_not_found()
+        (
+            client.table(REMINDERS_TABLE)
+            .update({"category_id": None})
+            .eq("user_id", user_id)
+            .eq("category_id", category_id)
+            .execute()
+        )
+    except APIError as exc:
+        raise _category_failed(exc, "delete") from exc
