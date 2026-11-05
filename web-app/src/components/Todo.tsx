@@ -118,7 +118,8 @@ function Row({ r, category, showKind, onToggle, onEdit, onDrop }: RowProps) {
     <li
       className="reminder"
       data-done={r.done}
-      style={{ "--tone": kindInfo(r.kind).tone } as React.CSSProperties}
+      // drawn in its category's colour, like the calendar; the kind's tone when it has none
+      style={{ "--tone": category?.color ?? kindInfo(r.kind).tone } as React.CSSProperties}
     >
       <button
         className="check"
