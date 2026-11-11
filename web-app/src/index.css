@@ -2459,6 +2459,28 @@ span.tool { cursor: default; }
   font-variant-numeric: tabular-nums;
 }
 
+/* completed reminders, folded under the live list until opened */
+.done-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-faint);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.done-toggle:hover { background: rgba(255, 255, 255, 0.04); }
+.done-toggle:focus-visible { outline: 2px solid var(--ink-faint); outline-offset: 1px; }
+.done-chev { width: 14px; height: 14px; flex: none; transition: transform 160ms ease; }
+.done-group[data-open="true"] .done-chev { transform: rotate(90deg); }
+
 .reminder-list {
   list-style: none;
   margin: 0;

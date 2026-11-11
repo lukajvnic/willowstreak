@@ -243,6 +243,8 @@ export default function Todo() {
   const [preset, setPreset] = useState<Preset | null>(null);
   const [split, setSplit] = useState(true);
   const [sort, setSort] = useState<SortMode>("priority");
+  // completed reminders stay folded away until asked for
+  const [showDone, setShowDone] = useState(false);
   // folded away to give the calendar the full width — remembered per browser
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -269,7 +271,10 @@ export default function Todo() {
   let shown = (selected ? reminders.filter((r) => covers(r, selected)) : reminders).map((r) => atOccurrence(r, at));
   if (catFilter === UNCATEGORIZED) shown = shown.filter((r) => !r.categoryId);
   else if (catFilter) shown = shown.filter((r) => r.categoryId === catFilter);
-  const open = shown.filter((r) => !r.done).length;
+  // finished ones are tucked into their own fold below the live list
+  const finished = sortReminders(shown.filter((r) => r.done), sort);
+  shown = shown.filter((r) => !r.done);
+  const open = shown.length;
 
   const catOf = (r: Reminder) => categories.find((c) => c.id === r.categoryId);
 
@@ -453,7 +458,11 @@ export default function Todo() {
           ) : (
             shown.length === 0 && (
               <p className="reminders-empty">
-                {selected || catFilter ? "nothing here" : "nothing yet — hit + to add one"}
+                {finished.length > 0
+                  ? "all done"
+                  : selected || catFilter
+                    ? "nothing here"
+                    : "nothing yet — hit + to add one"}
               </p>
             )
           )}
@@ -486,6 +495,33 @@ export default function Todo() {
                 <Row key={r.id} r={r} category={catOf(r)} showKind onToggle={toggle} onEdit={editRow} onDrop={drop} />
               ))}
             </ul>
+          )}
+
+          {finished.length > 0 && (
+            <div className="group done-group" data-open={showDone}>
+              <button
+                className="done-toggle"
+                type="button"
+                onClick={() => setShowDone((s) => !s)}
+                aria-expanded={showDone}
+              >
+                <svg className="done-chev" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className="group-name" style={{ "--tone": "var(--ink-faint)" } as React.CSSProperties}>
+                  completed
+                </span>
+                <span className="group-count">{finished.length}</span>
+              </button>
+
+              {showDone && (
+                <ul className="reminder-list">
+                  {finished.map((r) => (
+                    <Row key={r.id} r={r} category={catOf(r)} showKind onToggle={toggle} onEdit={editRow} onDrop={drop} />
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </div>
       </section>
