@@ -448,3 +448,37 @@ Vercel, two projects off github `lukajvnic/willowstreak` (repo was renamed from
 `web-app/public/favicon.{ico,png}` + `apple-touch-icon.png`, generated from
 `willowstreak_logo.png` (white on transparent) onto a `#121110` rounded tile so
 it shows on light tab bars. `favicon.svg` is the old one, now unreferenced.
+
+## loading skeletons (2026-11-25)
+
+Opening the site used to be a blank page until the script, the session check and
+`GET /api/me` had all finished, and each tab then said "loading…". Now:
+
+- **before any script runs**: `web-app/index.html` holds the page's frame inside
+  `#root` — the masthead and the habits tab in grey — and React replaces it on its
+  first render. `index.css` is linked from `index.html` (no longer imported in
+  `main.tsx`) so that markup is styled as soon as it arrives, in dev too.
+- **signed in or not**: a line of script in the head looks for a saved Supabase
+  session in localStorage (`sb-…-auth-token`) and sets `html[data-boot="out"]`
+  when there isn't one. Signed-out visitors get the centred "willo" name (the
+  sign-in page's heading) instead of the app's frame, so neither flashes the
+  other's screen. `hasStoredSession()` in `lib/supabase.ts` is the same test for
+  React. It's only a guess: an expired session shows the frame, then the sign-in page.
+- **while App is finding out who you are** (`!ready`, or a session with no
+  profile yet) it draws the real masthead (tabs clickable, a grey circle for the
+  avatar) and `TabSkeleton` for the chosen tab, instead of `null`.
+- **per tab**, all in `components/Skeletons.tsx`: `HabitsSkeleton` (habits not
+  loaded), `BoardSkeleton` (leaderboards), `RemindersSkeleton` (the to-do list;
+  the calendar and filters draw as normal), `FeedSkeleton` and `PeopleSkeleton`
+  (social feed, "people you may know"). `TodoSkeleton` / `SocialSkeleton` are
+  whole-tab versions used only before there's a session. Load errors still show
+  their text line.
+- the grey shapes are `.sk` (end of `index.css`). The band of light uses
+  `background-attachment: fixed`, so it crosses the whole page as one sweep
+  rather than each block on its own; `prefers-reduced-motion` turns it off. The
+  habit grid is one div cut into cells by an SVG mask (`.sk-grid`), sized to
+  roughly what Heatmap's `fit` works out.
+- the habits skeleton exists twice (index.html and `HabitsSkeleton`) and they
+  must be kept the same, or the handover from one to the other shows.
+- checked by running vite with a fake Supabase URL, a made-up session in
+  localStorage and Playwright holding `/api/*` open — no backend needed.

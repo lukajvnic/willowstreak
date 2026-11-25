@@ -4409,3 +4409,165 @@ body.sketching { cursor: ns-resize; user-select: none; }
 .swatch-custom { background: conic-gradient(#D96C6C, #D9A93A, #5FA46B, #4FB0A8, #6C9BD0, #9B7FD1, #D07BAA, #D96C6C); }
 .swatch-custom[data-on="true"] { background: var(--swatch); }
 .swatch-custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+
+/* ------------------------------------------------------------- skeletons */
+
+/* a grey stand-in for something still loading. the band of light is pinned to
+ * the window, not to each shape, so it crosses the whole page as one sweep
+ * instead of every block shimmering on its own beat */
+.sk {
+  display: block;
+  flex: none;
+  max-width: 100%;
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.07);
+  background-image: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 42%,
+    rgba(255, 255, 255, 0.09) 50%,
+    rgba(255, 255, 255, 0) 58%
+  );
+  background-size: 200vw 100vh;
+  background-attachment: fixed;
+  animation: sk-sweep 1.7s linear infinite;
+}
+
+.sk[data-round] { border-radius: 999px; }
+
+@keyframes sk-sweep {
+  from { background-position: -200vw 0; }
+  to   { background-position: 0 0; }
+}
+
+/* read out, not seen */
+.sk-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* two lines of text beside an avatar or a tick box */
+.sk-lines {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* --- habits: a year of cells per habit --- */
+
+/* about what Heatmap's `fit` comes to: the row less the day labels either
+ * side, and never past 44 weeks of 28px cells */
+.sk-habit {
+  width: min(100% - 124px, 1490px);
+  margin: 0 auto;
+}
+
+/* one block cut into cells by a mask — a tile is a cell plus its gap */
+.sk-grid {
+  margin-top: 34px;
+  aspect-ratio: 53.46 / 8.32;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 122 122'%3E%3Crect width='100' height='100' rx='26'/%3E%3C/svg%3E") 0 0 / calc(100% / 43.82) calc(100% / 6.82);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 122 122'%3E%3Crect width='100' height='100' rx='26'/%3E%3C/svg%3E") 0 0 / calc(100% / 43.82) calc(100% / 6.82);
+}
+
+/* .sk's own rules, without its corners — the mask does the rounding */
+.sk-grid {
+  background-color: rgba(255, 255, 255, 0.07);
+  background-image: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 42%,
+    rgba(255, 255, 255, 0.09) 50%,
+    rgba(255, 255, 255, 0) 58%
+  );
+  background-size: 200vw 100vh;
+  background-attachment: fixed;
+  animation: sk-sweep 1.7s linear infinite;
+}
+
+.sk-habits .panel-head { align-items: center; }
+
+/* --- leaderboard: three plinths --- */
+
+.sk-board .board-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.sk-board .stage { flex: none; width: 100%; }
+
+.sk-column {
+  width: 84px;
+  border-radius: 8px 8px 0 0;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 108px), rgba(0, 0, 0, 0.32) calc(100% - 34px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 108px), rgba(0, 0, 0, 0.32) calc(100% - 34px), transparent 100%);
+}
+
+/* --- to-do: reminder rows, and a week of blocks --- */
+
+.sk-reminder {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px 11px 14px;
+  border-radius: 12px;
+  background: var(--dune);
+}
+
+.sk-week {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.sk-day {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding-top: 6px;
+}
+
+.sk-day + .sk-day { border-left: 1px solid var(--line); }
+
+.sk-event {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  border-radius: 8px;
+}
+
+/* --- social: the feed's rows aren't buttons yet --- */
+
+.sk-feed .feed-row { cursor: default; }
+.sk-feed .feed-row:hover { background: transparent; }
+.sk-feed .sk-label + li { border-top: 0; }
+
+/* --- the page before the app has started (index.html) --- */
+
+/* which of the two is shown is decided by a line of script in the head:
+ * the grey app for someone who was signed in, the name alone for anyone else */
+html[data-boot="out"] [data-boot="in"],
+html:not([data-boot="out"]) [data-boot="out"] { display: none; }
+
+/* too narrow to fit: the real grid stays at 14px cells and scrolls sideways */
+@media (max-width: 860px) {
+  .sk-habit { width: 100%; }
+  .sk-grid {
+    aspect-ratio: auto;
+    height: 116px;
+    -webkit-mask-size: 17px 17px;
+    mask-size: 17px 17px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk,
+  .sk-grid { animation: none; background-image: none; }
+}

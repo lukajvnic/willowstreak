@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { BoardSkeleton } from "./Skeletons";
 import UserAvatar from "./UserAvatar";
 import { useAuth } from "../lib/auth";
 import type { Board } from "../lib/leaderboards";
@@ -319,7 +320,8 @@ export default function Leaderboard() {
   );
 
   if (boards === undefined) {
-    return <p className="foot">{loadError ? `couldn't load leaderboards — ${loadError}` : "loading…"}</p>;
+    if (!loadError) return <BoardSkeleton />;
+    return <p className="foot">couldn't load leaderboards — {loadError}</p>;
   }
   // a board exists for each habit you track, so no habits means nothing to rank
   if (boards.length === 0) return <p className="foot">no leaderboards yet — add a habit to get on one</p>;

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import ProfileModal from "./ProfileModal";
 import { ArrowUpIcon, FlameIcon } from "./SocialIcons";
+import { FeedSkeleton } from "./Skeletons";
 import SocialSearch from "./SocialSearch";
 import { FriendRequests, PeopleYouMayKnow } from "./SocialSide";
 import UserAvatar from "./UserAvatar";
@@ -68,6 +69,8 @@ export default function Social() {
               {waiting} new {waiting === 1 ? "update" : "updates"}
             </button>
           )}
+
+          {!items && <FeedSkeleton />}
 
           {items?.length === 0 && (
             <p className="feed-empty">

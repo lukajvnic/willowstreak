@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PeopleSkeleton } from "./Skeletons";
 import { CheckIcon, CloseIcon } from "./SocialIcons";
 import UserAvatar from "./UserAvatar";
 import { useAuth } from "../lib/auth";
@@ -151,6 +152,7 @@ export function PeopleYouMayKnow({ friends, act, busy }: Props) {
       )}
 
       <ul>
+        {list === null && <PeopleSkeleton />}
         {visible.map((s) => {
           const name = displayName(s.user) || s.user.username;
           return (

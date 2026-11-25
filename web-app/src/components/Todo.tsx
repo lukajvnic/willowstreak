@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import AddReminder, { type Preset } from "./AddReminder";
 import Calendar from "./Calendar";
 import ManageCategories from "./ManageCategories";
+import { RemindersSkeleton } from "./Skeletons";
 import { useAuth } from "../lib/auth";
 import {
   atOccurrence,
@@ -452,9 +453,11 @@ export default function Todo() {
 
         <div className="reminder-scroll">
           {loaded === null ? (
-            <p className="reminders-empty">
-              {loadError ? `couldn't load reminders — ${loadError}` : "loading…"}
-            </p>
+            loadError ? (
+              <p className="reminders-empty">couldn't load reminders — {loadError}</p>
+            ) : (
+              <RemindersSkeleton />
+            )
           ) : (
             shown.length === 0 && (
               <p className="reminders-empty">
