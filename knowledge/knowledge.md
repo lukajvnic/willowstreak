@@ -448,3 +448,50 @@ Vercel, two projects off github `lukajvnic/willowstreak` (repo was renamed from
 `web-app/public/favicon.{ico,png}` + `apple-touch-icon.png`, generated from
 `willowstreak_logo.png` (white on transparent) onto a `#121110` rounded tile so
 it shows on light tab bars. `favicon.svg` is the old one, now unreferenced.
+
+## loading skeletons (2026-11-25)
+
+Opening the site used to be a blank page until the script, the session check and
+`GET /api/me` had all finished, and each tab then said "loading…". Now:
+
+- **before any script runs**: `web-app/index.html` holds the page's frame inside
+  `#root` — the masthead and the habits tab in grey — and React replaces it on its
+  first render. `index.css` is linked from `index.html` (no longer imported in
+  `main.tsx`) so that markup is styled as soon as it arrives, in dev too.
+- **signed in or not**: a line of script in the head looks for a saved Supabase
+  session in localStorage (`sb-…-auth-token`) and sets `html[data-boot="out"]`
+  when there isn't one. Signed-out visitors get the centred "willo" name (the
+  sign-in page's heading) instead of the app's frame, so neither flashes the
+  other's screen. `hasStoredSession()` in `lib/supabase.ts` is the same test for
+  React. It's only a guess: an expired session shows the frame, then the sign-in page.
+- **while App is finding out who you are** (`!ready`, or a session with no
+  profile yet) it draws the real masthead (tabs clickable, a grey circle for the
+  avatar) and `TabSkeleton` for the chosen tab, instead of `null`.
+- **per tab**, all in `components/Skeletons.tsx`: `HabitsSkeleton` (habits not
+  loaded), `BoardSkeleton` (leaderboards), `RemindersSkeleton` (the to-do list;
+  the calendar and filters draw as normal), `FeedSkeleton` and `PeopleSkeleton`
+  (social feed, "people you may know"). `TodoSkeleton` / `SocialSkeleton` are
+  whole-tab versions used only before there's a session. Load errors still show
+  their text line.
+- the grey shapes are `.sk` (end of `index.css`). The band of light uses
+  `background-attachment: fixed`, so it crosses the whole page as one sweep
+  rather than each block on its own; `prefers-reduced-motion` turns it off.
+- **the habits placeholder lands exactly where the real grids do** (2026-11-25,
+  measured identical at 14 widths x 3 dates). It is Heatmap's own markup
+  (`.panel-head`, `.heatmap`, `.day-labels`, `.months`, `.panel-foot`) so the real
+  rules lay it out, with unseen stand-in words inside `.sk-ink` bars giving the
+  text lines their real height. What Heatmap's `fit` computes in script (cell,
+  gap, lead, left, `--label`, `--text`) is recomputed in CSS under `.sk-habits`
+  from the row's width: the stack is a size container, and `round()` /
+  `tan(atan2())` redo `fitCell` / `gapFor` / `leadFor`. Centring switches on at a
+  819px row via `@container`, the same point `data-centred` does. **Change the
+  maths in Heatmap.tsx and this CSS has to change with it.**
+- `.sk-grid` is one div cut into cells by six intersected masks (stripes each
+  way plus a tile per rounded corner). A script in index.html's head sets
+  `--sk-rest` (days left in this week, clipped off the last column, since nothing
+  is drawn after today) and `--sk-seam` (1 when a jan 1 is in the 44 weeks, which
+  adds the year tag's room under the grid).
+- the habits skeleton exists twice (index.html and `HabitsSkeleton`) and they
+  must be kept the same, or the handover from one to the other shows.
+- checked by running vite with a fake Supabase URL, a made-up session in
+  localStorage and Playwright holding `/api/*` open — no backend needed.

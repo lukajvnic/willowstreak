@@ -27,6 +27,8 @@ import { stubOf } from "./lib/usersApi";
 import { useReminderAlerts } from "./lib/notify";
 import { KEYS, preloadAllTabs, preloadProfile, preloadTab } from "./lib/pageData";
 import { forgetAll, invalidate } from "./lib/preload";
+import { HabitsSkeleton, TabSkeleton } from "./components/Skeletons";
+import { hasStoredSession } from "./lib/supabase";
 
 const NAV = ["habits", "to-do", "leaderboard", "social"];
 
@@ -81,7 +83,52 @@ export default function App() {
   // clicking an alert brings you to the reminder it's about
   useReminderAlerts(signedIn ? token : undefined, () => setTab("to-do"));
 
-  if (!ready || (session && profile === null)) return null;
+  const masthead = (account: React.ReactNode) => (
+    <header className="masthead">
+      <nav className="brand">
+        <span className="brand-mark">willowstreak</span>
+
+        <div className="nav">
+          {NAV.map((item) => (
+            <button
+              key={item}
+              type="button"
+              data-active={item === tab}
+              // pointing at a tab is a strong hint it's next — top its data up now
+              onPointerEnter={() => signedIn && token && preloadTab(item, token)}
+              onFocus={() => signedIn && token && preloadTab(item, token)}
+              onClick={() => setTab(item)}
+              aria-label={item === "social" && waiting > 0 ? `social, ${waiting} friend requests` : undefined}
+            >
+              {item}
+              {item === "social" && waiting > 0 && <span className="nav-dot" aria-hidden />}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      {account}
+    </header>
+  );
+
+  // still finding out who this is. someone who was signed in last time gets the
+  // app's frame straight away, with the tab drawn in grey; anyone else gets the
+  // sign-in page's name, so neither flashes the other's screen
+  if (!ready || (session && profile === null)) {
+    if (!session && !hasStoredSession()) {
+      return (
+        <main className="page auth-page">
+          <h1 className="wordmark">willo</h1>
+        </main>
+      );
+    }
+    return (
+      <main className="page" data-tab={tab}>
+        {masthead(<span className="sk" data-round style={{ width: 34, height: 34 }} aria-hidden />)}
+        <TabSkeleton tab={tab} />
+      </main>
+    );
+  }
   if (!signedIn || !me) return <AuthGate />;
 
   // your own profile shows your grids, so a saved change makes its cached copy stale
@@ -140,47 +187,29 @@ export default function App() {
 
   return (
     <main className="page" data-tab={tab}>
-      <header className="masthead">
-        <nav className="brand">
-          <span className="brand-mark">willowstreak</span>
-
-          <div className="nav">
-            {NAV.map((item) => (
-              <button
-                key={item}
-                type="button"
-                data-active={item === tab}
-                // pointing at a tab is a strong hint it's next — top its data up now
-                onPointerEnter={() => token && preloadTab(item, token)}
-                onFocus={() => token && preloadTab(item, token)}
-                onClick={() => setTab(item)}
-                aria-label={item === "social" && waiting > 0 ? `social, ${waiting} friend requests` : undefined}
-              >
-                {item}
-                {item === "social" && waiting > 0 && <span className="nav-dot" aria-hidden />}
-              </button>
-            ))}
-          </div>
-        </nav>
-
-        <button
-          className="me"
-          type="button"
-          onClick={() => setShowMe(true)}
-          onPointerEnter={() => token && userId && preloadProfile(token, userId)}
-          onFocus={() => token && userId && preloadProfile(token, userId)}
-          aria-label="your account"
-        >
-          <AvatarPreview tone={skin} photo={photo} head={worn.head} shirt={worn.shirt} size={34} crop />
-        </button>
-      </header>
+      {masthead(
+          <button
+            className="me"
+            type="button"
+            onClick={() => setShowMe(true)}
+            onPointerEnter={() => token && userId && preloadProfile(token, userId)}
+            onFocus={() => token && userId && preloadProfile(token, userId)}
+            aria-label="your account"
+          >
+            <AvatarPreview tone={skin} photo={photo} head={worn.head} shirt={worn.shirt} size={34} crop />
+          </button>,
+      )}
 
       {tab === "habits" && (
         <>
           <ActivityBubbles />
 
           {habits === null ? (
-            <p className="foot">{loadError ? `couldn't load habits — ${loadError}` : "loading…"}</p>
+            loadError ? (
+              <p className="foot">couldn't load habits — {loadError}</p>
+            ) : (
+              <HabitsSkeleton />
+            )
           ) : (
             <>
               <div className="stack">

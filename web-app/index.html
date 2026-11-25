@@ -7,9 +7,150 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>willowstreak</title>
+    <!-- linked here rather than imported by the script, so the page below is
+         styled the moment it arrives instead of waiting on the app to load -->
+    <link rel="stylesheet" href="/src/index.css" />
+    <script>
+      // was this browser signed in last time? (hasStoredSession in src/lib/supabase.ts)
+      try {
+        if (!Object.keys(localStorage).some((k) => /^sb-.+-auth-token$/.test(k))) {
+          document.documentElement.dataset.boot = "out";
+        }
+      } catch {
+        document.documentElement.dataset.boot = "out";
+      }
+
+      // two things about today the grey habit grids need to match the real ones
+      // (.sk-grid in index.css): how many days of this week are still to come,
+      // and whether a jan 1 falls in the 44 weeks shown (newYearIndex in habits.ts)
+      (function () {
+        var now = new Date();
+        var rest = 6 - now.getDay();
+        var end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + rest);
+        var from = new Date(end.getFullYear(), end.getMonth(), end.getDate() - (44 * 7 - 1) + 7);
+        var jan1 = new Date(end.getFullYear(), 0, 1);
+        var style = document.documentElement.style;
+        style.setProperty("--sk-rest", rest);
+        style.setProperty("--sk-seam", jan1 >= from ? 1 : 0);
+      })();
+    </script>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- what shows until the app has loaded and takes #root over: the frame of
+         the page with the habits tab in grey. it's the same markup App draws
+         while it's still loading (HabitsSkeleton in src/components/Skeletons.tsx)
+         — keep the two the same, so the handover doesn't show -->
+    <div id="root">
+      <main class="page" data-tab="habits" data-boot="in">
+        <header class="masthead">
+          <nav class="brand">
+            <span class="brand-mark">willowstreak</span>
+            <div class="nav">
+              <button type="button" data-active="true">habits</button>
+              <button type="button">to-do</button>
+              <button type="button">leaderboard</button>
+              <button type="button">social</button>
+            </div>
+          </nav>
+          <span class="sk" data-round style="width: 34px; height: 34px" aria-hidden="true"></span>
+        </header>
+
+        <div class="stack sk-habits">
+          <section class="panel" aria-hidden="true">
+            <div class="panel-head">
+              <h2 class="panel-title"><span class="sk sk-ink">reading</span></h2>
+              <div class="panel-side">
+                <span class="panel-meta"><span class="sk sk-ink">pages per day</span></span>
+                <span class="panel-edit"><svg></svg></span>
+              </div>
+            </div>
+            <div class="heatmap">
+              <div class="day-labels">
+                <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+              </div>
+              <div class="grid-wrap">
+                <div class="months"></div>
+                <div class="sk-grid"></div>
+              </div>
+            </div>
+            <div class="panel-foot">
+              <dl class="habit-stats">
+                <div class="habit-stat"><span class="sk sk-ink">streak: 12 days</span></div>
+                <div class="habit-stat"><span class="sk sk-ink">average: 2.5 pages</span></div>
+              </dl>
+              <span class="today">
+                <span class="today-line">
+                  <span class="today-label"><span class="sk sk-ink">today: 2 pages</span></span>
+                </span>
+              </span>
+            </div>
+          </section>
+          <section class="panel" aria-hidden="true">
+            <div class="panel-head">
+              <h2 class="panel-title"><span class="sk sk-ink">run</span></h2>
+              <div class="panel-side">
+                <span class="panel-meta"><span class="sk sk-ink">km per day</span></span>
+                <span class="panel-edit"><svg></svg></span>
+              </div>
+            </div>
+            <div class="heatmap">
+              <div class="day-labels">
+                <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+              </div>
+              <div class="grid-wrap">
+                <div class="months"></div>
+                <div class="sk-grid"></div>
+              </div>
+            </div>
+            <div class="panel-foot">
+              <dl class="habit-stats">
+                <div class="habit-stat"><span class="sk sk-ink">streak: 4 days</span></div>
+                <div class="habit-stat"><span class="sk sk-ink">average: 3.1 km</span></div>
+              </dl>
+              <span class="today">
+                <span class="today-line">
+                  <span class="today-label"><span class="sk sk-ink">today: 2 pages</span></span>
+                </span>
+              </span>
+            </div>
+          </section>
+          <section class="panel" aria-hidden="true">
+            <div class="panel-head">
+              <h2 class="panel-title"><span class="sk sk-ink">meditation</span></h2>
+              <div class="panel-side">
+                <span class="panel-meta"><span class="sk sk-ink">yes / no</span></span>
+                <span class="panel-edit"><svg></svg></span>
+              </div>
+            </div>
+            <div class="heatmap">
+              <div class="day-labels">
+                <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+              </div>
+              <div class="grid-wrap">
+                <div class="months"></div>
+                <div class="sk-grid"></div>
+              </div>
+            </div>
+            <div class="panel-foot">
+              <dl class="habit-stats">
+                <div class="habit-stat"><span class="sk sk-ink">streak: 20 days</span></div>
+                <div class="habit-stat"><span class="sk sk-ink">done: 180 days</span></div>
+              </dl>
+              <span class="today">
+                <span class="today-line">
+                  <span class="today-label"><span class="sk sk-ink">today: 2 pages</span></span>
+                </span>
+              </span>
+            </div>
+          </section>
+          <span class="sk-label" role="status">loading habits…</span>
+        </div>
+      </main>
+
+      <main class="page auth-page" data-boot="out">
+        <h1 class="wordmark">willo</h1>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

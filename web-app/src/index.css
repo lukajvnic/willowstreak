@@ -4409,3 +4409,227 @@ body.sketching { cursor: ns-resize; user-select: none; }
 .swatch-custom { background: conic-gradient(#D96C6C, #D9A93A, #5FA46B, #4FB0A8, #6C9BD0, #9B7FD1, #D07BAA, #D96C6C); }
 .swatch-custom[data-on="true"] { background: var(--swatch); }
 .swatch-custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+
+/* ------------------------------------------------------------- skeletons */
+
+/* a grey stand-in for something still loading. the band of light is pinned to
+ * the window, not to each shape, so it crosses the whole page as one sweep
+ * instead of every block shimmering on its own beat */
+.sk {
+  display: block;
+  flex: none;
+  max-width: 100%;
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.07);
+  background-image: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 42%,
+    rgba(255, 255, 255, 0.09) 50%,
+    rgba(255, 255, 255, 0) 58%
+  );
+  background-size: 200vw 100vh;
+  background-attachment: fixed;
+  animation: sk-sweep 1.7s linear infinite;
+}
+
+.sk[data-round] { border-radius: 999px; }
+
+@keyframes sk-sweep {
+  from { background-position: -200vw 0; }
+  to   { background-position: 0 0; }
+}
+
+/* read out, not seen */
+.sk-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* two lines of text beside an avatar or a tick box */
+.sk-lines {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* --- habits: a year of cells per habit --- */
+
+/* the placeholder is the real panel's markup (.panel-head, .heatmap,
+ * .panel-foot), so the real rules lay it out. what Heatmap works out in script
+ * for a `fit` grid — the cell, the gap, how far in the grid sits — is worked out
+ * again here from the row's width, so the grey grid stands exactly where the
+ * real one lands. keep this in step with fitCell / gapFor / leadFor in Heatmap.tsx */
+.sk-habits { container-type: inline-size; }
+
+.sk-habits .panel {
+  /* the row's width, as whole px like the clientWidth Heatmap reads */
+  --w: round(nearest, 100cqw, 1px);
+  /* fitCell's two passes: 53.46 is 44 weeks plus 43 gaps of 0.22 of a cell,
+   * and the label column either side is 21.4px + 1.1143 a cell (74px at 14) */
+  --pass1: round(down, (var(--w) - 74px) / 53.46, 1px);
+  --pass2: round(down, (var(--w) - 42.8px - 2.2285714 * var(--pass1)) / 53.46, 1px);
+  --cell: clamp(14px, var(--pass2), 28px);
+  --gap: max(3px, round(down, var(--cell) * 0.22, 1px));
+  --step: calc(var(--cell) + var(--gap));
+  /* the cell against the 14px everything was designed at, as a plain number */
+  --scale: tan(atan2(var(--cell), 14px));
+  --label: calc(0.4 + 0.6 * var(--scale));
+  --text: calc(0.5 + 0.5 * var(--scale));
+  --cells-w: calc(44 * var(--cell) + 43 * var(--gap));
+}
+
+/* wide enough to centre the grid with its labels clear on the left — what
+ * `data-centred` switches on for a real panel. under this the cells stay at
+ * 14px and the heatmap scrolls, as the real one does */
+@container (min-width: 818.5px) {
+  .sk-habits .panel {
+    --grid-w: var(--cells-w);
+    --lead: calc(11px + 26px * var(--label));
+    --left: round(down, (var(--w) - var(--grid-w)) / 2, 1px);
+  }
+
+  .sk-habits .panel-head,
+  .sk-habits .panel-foot {
+    width: var(--grid-w);
+    margin-left: var(--left);
+  }
+
+  .sk-habits .heatmap {
+    width: calc(var(--lead) + var(--grid-w) + 3px);
+    margin-left: calc(var(--left) - var(--lead));
+  }
+}
+
+/* the room a new-year tag takes under the grid, when this year's jan 1 is in
+ * view (--sk-seam, set by index.html) */
+.sk-habits .heatmap {
+  overflow: hidden;
+  padding-bottom: calc(3px + 14px * var(--label) * var(--sk-seam, 0));
+}
+
+/* one block cut into cells by masks laid over each other: stripes across,
+ * stripes down, and a tile per corner to round it — each corner's tile is hung
+ * from that corner, so none of them needs to know the gap */
+.sk-grid {
+  flex: none;
+  width: var(--cells-w);
+  height: calc(7 * var(--cell) + 6 * var(--gap));
+  --down: repeating-linear-gradient(90deg, #000 0 var(--cell), transparent var(--cell) var(--step));
+  --across: repeating-linear-gradient(180deg, #000 0 var(--cell), transparent var(--cell) var(--step));
+  -webkit-mask-image: var(--down), var(--across), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 21.3A21.3 21.3 0 0 1 21.3 0H100V100H0Z'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0H78.7A21.3 21.3 0 0 1 100 21.3V100H0Z'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0H100V100H21.3A21.3 21.3 0 0 1 0 78.7Z'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0H100V78.7A21.3 21.3 0 0 1 78.7 100H0Z'/%3E%3C/svg%3E");
+  mask-image: var(--down), var(--across), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 21.3A21.3 21.3 0 0 1 21.3 0H100V100H0Z'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0H78.7A21.3 21.3 0 0 1 100 21.3V100H0Z'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0H100V100H21.3A21.3 21.3 0 0 1 0 78.7Z'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0H100V78.7A21.3 21.3 0 0 1 78.7 100H0Z'/%3E%3C/svg%3E");
+  -webkit-mask-size: auto, auto, var(--step) var(--step), var(--step) var(--step), var(--step) var(--step), var(--step) var(--step);
+  mask-size: auto, auto, var(--step) var(--step), var(--step) var(--step), var(--step) var(--step), var(--step) var(--step);
+  -webkit-mask-position: 0 0, 0 0, 0 0, calc(0px - var(--gap)) 0, 0 calc(0px - var(--gap)), calc(0px - var(--gap)) calc(0px - var(--gap));
+  mask-position: 0 0, 0 0, 0 0, calc(0px - var(--gap)) 0, 0 calc(0px - var(--gap)), calc(0px - var(--gap)) calc(0px - var(--gap));
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  /* nothing is drawn after today: the days left in this week (--sk-rest, set
+   * by index.html) come off the bottom of the last column */
+  --today: calc(100% - var(--sk-rest, 0) * var(--step));
+  --last: calc(100% - var(--cell) - var(--gap) / 2);
+  clip-path: polygon(0 0, 100% 0, 100% var(--today), var(--last) var(--today), var(--last) 100%, 0 100%);
+}
+
+/* .sk's own rules, without its corners — the mask does the rounding */
+.sk-grid {
+  background-color: rgba(255, 255, 255, 0.07);
+  background-image: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 42%,
+    rgba(255, 255, 255, 0.09) 50%,
+    rgba(255, 255, 255, 0) 58%
+  );
+  background-size: 200vw 100vh;
+  background-attachment: fixed;
+  animation: sk-sweep 1.7s linear infinite;
+}
+
+/* a grey bar exactly the size of the words it stands for: the words are there,
+ * unseen, so the line is as tall and as long as the real one in any font */
+.sk-ink {
+  display: inline-block;
+  color: transparent;
+  user-select: none;
+  /* a bar the height of the letters, not of the whole line */
+  clip-path: inset(14% 0 round 5px);
+}
+
+.sk-habits .panel-edit { visibility: hidden; }
+.sk-habits .today-line { border-bottom-color: transparent; }
+
+/* --- leaderboard: three plinths --- */
+
+.sk-board .board-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.sk-board .stage { flex: none; width: 100%; }
+
+.sk-column {
+  width: 84px;
+  border-radius: 8px 8px 0 0;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 108px), rgba(0, 0, 0, 0.32) calc(100% - 34px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 108px), rgba(0, 0, 0, 0.32) calc(100% - 34px), transparent 100%);
+}
+
+/* --- to-do: reminder rows, and a week of blocks --- */
+
+.sk-reminder {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px 11px 14px;
+  border-radius: 12px;
+  background: var(--dune);
+}
+
+.sk-week {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.sk-day {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding-top: 6px;
+}
+
+.sk-day + .sk-day { border-left: 1px solid var(--line); }
+
+.sk-event {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  border-radius: 8px;
+}
+
+/* --- social: the feed's rows aren't buttons yet --- */
+
+.sk-feed .feed-row { cursor: default; }
+.sk-feed .feed-row:hover { background: transparent; }
+.sk-feed .sk-label + li { border-top: 0; }
+
+/* --- the page before the app has started (index.html) --- */
+
+/* which of the two is shown is decided by a line of script in the head:
+ * the grey app for someone who was signed in, the name alone for anyone else */
+html[data-boot="out"] [data-boot="in"],
+html:not([data-boot="out"]) [data-boot="out"] { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sk,
+  .sk-grid { animation: none; background-image: none; }
+}
