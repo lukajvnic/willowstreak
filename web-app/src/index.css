@@ -4410,6 +4410,98 @@ body.sketching { cursor: ns-resize; user-select: none; }
 .swatch-custom[data-on="true"] { background: var(--swatch); }
 .swatch-custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
 
+/* --------------------------------------------------------- calendar import */
+
+.modal.imp { max-width: 520px; padding-top: 24px; }
+
+.imp-blurb { margin: -6px 0 4px; font-size: 13px; line-height: 1.5; color: var(--ink-soft); }
+
+.imp-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+/* one google calendar: its switch and name, what it brings, where it goes */
+.imp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px 9px 12px;
+  border-radius: 14px;
+  background: var(--dune);
+}
+
+.imp-row[data-on="false"] { opacity: 0.55; }
+
+.imp-pick {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+
+.imp-pick input { flex: none; margin: 0; accent-color: var(--ink); cursor: pointer; }
+
+.imp-name {
+  min-width: 0;
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.imp-count { flex: none; font-size: 11.5px; color: var(--ink-faint); }
+
+.imp-category {
+  flex: none;
+  width: 150px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--dune-lift);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.imp-note { margin: 12px 2px 0; font-size: 12px; line-height: 1.45; color: var(--ink-faint); }
+
+.imp-error { margin: 12px 2px 0; font-size: 12.5px; color: #D96C6C; }
+
+.imp-actions { display: flex; align-items: center; gap: 10px; }
+.imp-actions .add-save { flex: 1; }
+
+.imp-undo {
+  flex: none;
+  margin-top: 16px;
+  padding: 12px 20px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: background 130ms ease, color 130ms ease;
+}
+
+.imp-undo:hover { background: rgba(255, 255, 255, 0.07); color: var(--ink); }
+
+.imp .add-save:disabled { opacity: 0.4; cursor: default; }
+
+@media (max-width: 560px) {
+  .imp-row { flex-wrap: wrap; }
+  .imp-category { width: 100%; }
+}
+
 /* ------------------------------------------------------------- skeletons */
 
 /* a grey stand-in for something still loading. the band of light is pinned to

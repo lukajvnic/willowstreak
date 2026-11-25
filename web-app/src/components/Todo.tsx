@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import AddReminder, { type Preset } from "./AddReminder";
 import Calendar from "./Calendar";
+import ImportCalendar from "./ImportCalendar";
 import ManageCategories from "./ManageCategories";
 import { RemindersSkeleton } from "./Skeletons";
 import { useAuth } from "../lib/auth";
+import { googleConfigured } from "../lib/googleCalendar";
 import {
   atOccurrence,
   covers,
@@ -192,6 +194,7 @@ export default function Todo() {
   const [saveError, setSaveError] = useState("");
   const [categories, setCategories] = useState<Category[]>(cached?.categories ?? DEFAULT_CATEGORIES);
   const [managing, setManaging] = useState(false);
+  const [importing, setImporting] = useState(false);
   const reminders = loaded ?? [];
   const setReminders = (change: (prev: Reminder[]) => Reminder[]) =>
     setLoaded((prev) => change(prev ?? []));
@@ -540,7 +543,17 @@ export default function Todo() {
           setPreset(slot);
           setAdding(true);
         }}
+        onImport={googleConfigured ? () => setImporting(true) : undefined}
       />
+
+      {importing && (
+        <ImportCalendar
+          categories={categories}
+          // an import writes straight to the server, so read it back from there
+          onChanged={() => reload(true)}
+          onClose={() => setImporting(false)}
+        />
+      )}
 
       {(adding || editing) && (
         <AddReminder

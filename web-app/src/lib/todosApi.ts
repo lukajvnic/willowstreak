@@ -6,6 +6,7 @@ function failure(what: string, res: ApiCall): Error {
   const message = (res.data as { error?: { message?: string } } | null)?.error?.message;
   return new Error(message ? `${what}: ${message}` : `${what} (${res.status})`);
 }
+import type { ImportDraft } from "./calendarImport";
 import { CATEGORY_COLORS, DEFAULT_CATEGORIES, type Category, type Reminder } from "./todos";
 
 /** rows as the backend returns them */
@@ -97,22 +98,27 @@ export async function loadTodos(
   };
 }
 
+/** what a reminder says, as the backend takes it — the fields every write sends */
+const shapeBody = (r: Reminder) => ({
+  title: r.title,
+  kind: r.kind,
+  start_date: r.start ?? null,
+  end_date: r.end ?? null,
+  at_time: r.time ?? null,
+  duration_minutes: r.duration ?? null,
+  place: r.place ?? "",
+  category_id: r.categoryId ?? null,
+});
+
 /** `r.id` is made by the client, so the row already on screen is the saved one */
 export async function createReminder(token: string, r: Reminder): Promise<void> {
   const body = {
+    ...shapeBody(r),
     id: r.id,
-    title: r.title,
-    kind: r.kind,
     done: r.done,
-    start_date: r.start ?? null,
-    end_date: r.end ?? null,
-    at_time: r.time ?? null,
-    duration_minutes: r.duration ?? null,
     // only sent when there is one, so a database without the column still files the rest
     ...(r.alert != null ? { alert_minutes: r.alert } : {}),
     ...(r.repeat != null ? { repeat: r.repeat, repeat_until: r.repeatUntil ?? null } : {}),
-    place: r.place ?? "",
-    category_id: r.categoryId ?? null,
   };
   const res = await api("/api/reminders", { method: "POST", token, body });
   if (!res.ok) throw failure("reminder save failed", res);
@@ -121,17 +127,10 @@ export async function createReminder(token: string, r: Reminder): Promise<void> 
 /** rewrites everything the reminder says; `done` isn't touched */
 export async function editReminder(token: string, r: Reminder): Promise<void> {
   const body = {
-    title: r.title,
-    kind: r.kind,
-    start_date: r.start ?? null,
-    end_date: r.end ?? null,
-    at_time: r.time ?? null,
-    duration_minutes: r.duration ?? null,
+    ...shapeBody(r),
     // sent, null included, for one that has or had an alert — null clears it
     ...(r.alert !== undefined ? { alert_minutes: r.alert } : {}),
     ...(r.repeat !== undefined ? { repeat: r.repeat, repeat_until: r.repeat ? (r.repeatUntil ?? null) : null } : {}),
-    place: r.place ?? "",
-    category_id: r.categoryId ?? null,
   };
   const res = await api(`/api/reminders/${r.id}`, { method: "PUT", token, body });
   if (!res.ok) throw failure("reminder edit failed", res);
@@ -151,6 +150,42 @@ export async function setDoneDates(token: string, id: string, doneDates: string[
 export async function deleteReminder(token: string, id: string): Promise<void> {
   const res = await api(`/api/reminders/${id}`, { method: "DELETE", token });
   if (!res.ok) throw failure("reminder delete failed", res);
+}
+
+/** the most reminders the backend takes in one import request */
+const IMPORT_BATCH = 1000;
+
+/** files a whole import. every draft carries `importId`, which is what
+ * `undoImport` takes it back by. resolves with how many were new and how many
+ * were already here from an earlier import */
+export async function importReminders(
+  token: string,
+  importId: string,
+  drafts: ImportDraft[],
+): Promise<{ added: number; skipped: number }> {
+  const total = { added: 0, skipped: 0 };
+  for (let i = 0; i < drafts.length; i += IMPORT_BATCH) {
+    const reminders = drafts.slice(i, i + IMPORT_BATCH).map((d) => ({
+      ...shapeBody(d),
+      id: d.id,
+      source: d.source,
+      repeat: d.repeat ?? null,
+      repeat_until: d.repeatUntil ?? null,
+      done_dates: d.doneDates ?? [],
+    }));
+    const res = await api("/api/reminders/import", { method: "POST", token, body: { import_id: importId, reminders } });
+    if (!res.ok) throw failure("import failed", res);
+    const data = res.data as { reminders: unknown[]; skipped: number };
+    total.added += data.reminders.length;
+    total.skipped += data.skipped;
+  }
+  return total;
+}
+
+/** removes everything one import brought in */
+export async function undoImport(token: string, importId: string): Promise<void> {
+  const res = await api(`/api/reminders/imports/${importId}`, { method: "DELETE", token });
+  if (!res.ok) throw failure("undo failed", res);
 }
 
 export async function createCategory(token: string, c: Category): Promise<void> {

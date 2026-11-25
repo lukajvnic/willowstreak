@@ -14,6 +14,7 @@ from app.modules.reminders.schemas import (
     ReminderCreateRequest,
     ReminderData,
     ReminderEditRequest,
+    ReminderImportRequest,
     ReminderShape,
     ReminderUpdateRequest,
 )
@@ -116,6 +117,65 @@ def create_reminder(
 ) -> ReminderData:
     row = {"user_id": user_id, **_shape_row(payload)}
     return ReminderData.model_validate(_insert(client, REMINDERS_TABLE, row, "reminder"))
+
+
+def import_reminders(
+    client: Client, user_id: str, payload: ReminderImportRequest
+) -> list[ReminderData]:
+    """Files a whole import in one write and returns the rows that were new.
+    One whose `source` this user already has is left exactly as it is — it may
+    have been edited since it first came in."""
+    rows = [
+        {
+            "user_id": user_id,
+            "import_id": str(payload.import_id),
+            # every column on every row: a bulk insert needs the keys to match
+            **reminder.model_dump(mode="json"),
+        }
+        for reminder in payload.reminders
+    ]
+    try:
+        response = (
+            client.table(REMINDERS_TABLE)
+            .upsert(rows, on_conflict="user_id,source", ignore_duplicates=True)
+            .execute()
+        )
+    except APIError as exc:
+        if exc.code == POSTGREST_UNKNOWN_COLUMN:
+            raise _schema_behind(exc) from exc
+        if exc.code in {POSTGRES_UNIQUE_VIOLATION, POSTGRES_CHECK_VIOLATION}:
+            raise ApiError(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                code="import_invalid",
+                message="That import isn't valid",
+            ) from exc
+        raise ApiError(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            code="import_failed",
+            message="The import could not be saved",
+        ) from exc
+    return [ReminderData.model_validate(row) for row in (response.data or [])]
+
+
+def undo_import(client: Client, user_id: str, import_id: str) -> None:
+    """Deletes everything one import brought in. Nothing left to delete isn't
+    an error: undoing twice ends in the same place."""
+    try:
+        (
+            client.table(REMINDERS_TABLE)
+            .delete()
+            .eq("user_id", user_id)
+            .eq("import_id", import_id)
+            .execute()
+        )
+    except APIError as exc:
+        if exc.code == POSTGREST_UNKNOWN_COLUMN:
+            raise _schema_behind(exc) from exc
+        raise ApiError(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            code="import_undo_failed",
+            message="The import could not be undone",
+        ) from exc
 
 
 def _shape_row(payload: ReminderShape) -> dict[str, Any]:

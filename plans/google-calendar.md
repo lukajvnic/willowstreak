@@ -8,6 +8,43 @@ the first draft of this plan proposed a live read-only link. a one-time port is
 a different and much smaller thing, so most of that draft is gone. what's left
 of it is under "what we're not doing".
 
+## status: built (2026-11-25), not yet tried against a real google account
+
+phases 1 and 2 are in, button only. what exists:
+
+- `web-app/src/lib/googleCalendar.ts` — google sign-in and the calendar reads.
+- `web-app/src/lib/calendarImport.ts` — events → reminders, with tests beside it.
+- `web-app/src/components/ImportCalendar.tsx` — the dialog (pick account → review → done / undo).
+- backend `POST /api/reminders/import` and `DELETE /api/reminders/imports/{import_id}`.
+- migration `20261125120000_reminder_import.sql` (`reminders.source`, `reminders.import_id`).
+
+it was run end to end in a browser against a stand-in for google and for the
+api. real google hasn't answered it yet — that needs the setup below.
+
+### to switch it on
+
+1. google cloud console: new project → enable **Google Calendar API**.
+2. oauth consent screen: user type *external*, publishing status *testing*.
+   add the scopes `calendar.calendarlist.readonly` and `calendar.events.readonly`.
+   add each friend's google address under *test users*.
+3. credentials → create oauth client id → *web application*. authorised
+   javascript origins: `https://willowstreak.com`, `https://www.willowstreak.com`,
+   `http://localhost:5173`. no redirect uri and no client secret are needed.
+4. set `VITE_GOOGLE_CLIENT_ID` to that id: in `web-app/.env.local`, and on the
+   `willo` vercel project (then redeploy). without it the import button is hidden.
+5. `npx supabase db push` for the migration. until then an import fails with
+   "the database is missing a migration".
+
+### differences from the plan below
+
+- a repeat with excluded or extra dates written into its rule is treated like
+  one we can't express (it comes in as single events for 3 months), since the
+  exclusions can't be carried over.
+- every-two-weeks only maps when the event falls on a single weekday.
+- google's own reminders (popups) are not turned into alerts.
+- undo also removes the categories that import made.
+- no empty-state entry yet: the only way in is "import" on the calendar heading.
+
 ## decided (Luka, 2026-11-25)
 
 - **imports come in as anchors.** no new `event` kind. they'll have tick boxes

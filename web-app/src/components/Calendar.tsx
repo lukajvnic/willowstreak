@@ -33,6 +33,8 @@ type Props = {
   onResize: (r: Reminder, minutes: number) => void;
   /** an empty slot was clicked, or dragged out, on the week grid */
   onCreate: (slot: Preset) => void;
+  /** opens the calendar import — left out when there's nothing to import from */
+  onImport?: () => void;
 };
 
 type View = "week" | "month";
@@ -77,7 +79,7 @@ function place(list: Reminder[], lengthOf: (r: Reminder) => number): { placed: P
   return { placed, lanes: Math.max(1, ends.length) };
 }
 
-export default function Calendar({ reminders, categories, selected, onSelect, onResize, onCreate }: Props) {
+export default function Calendar({ reminders, categories, selected, onSelect, onResize, onCreate, onImport }: Props) {
   const today = todayKey();
   const [view, setView] = useState<View>("week");
   const [cursor, setCursor] = useState(today);
@@ -247,6 +249,12 @@ export default function Calendar({ reminders, categories, selected, onSelect, on
         </div>
 
         <h3 className="cal-title">{title()}</h3>
+
+        {onImport && (
+          <button className="cal-today" type="button" onClick={onImport}>
+            import
+          </button>
+        )}
 
         <div className="cal-views">
           {VIEWS.map((v) => (

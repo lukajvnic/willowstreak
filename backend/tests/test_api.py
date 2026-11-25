@@ -1,4 +1,5 @@
 import datetime as dt
+import uuid
 
 TODAY = dt.date.today()
 
@@ -770,6 +771,65 @@ def test_reminder_edit(client):
 
     assert client.put(f"/api/reminders/{rid}", json={**edit, "end_date": None}).status_code == 422
     assert client.put(f"/api/reminders/{rid}", json={**edit, "title": ""}).status_code == 422
+
+
+def imported(source: str, **over):
+    return new_reminder(**{"kind": "anchor", "start_date": "2026-11-02", "source": source, **over})
+
+
+def test_import_files_a_batch_and_skips_what_is_already_here(client):
+    register(client)
+    first = {"import_id": str(uuid.uuid4()), "reminders": [
+        imported("gcal:a", title="lecture", at_time="10:00", duration_minutes=50, repeat="weekly",
+                 repeat_until="2026-12-07", done_dates=["2026-11-09"]),
+        imported("gcal:b", title="dentist"),
+    ]}
+    r = client.post("/api/reminders/import", json=first)
+    assert r.status_code == 201, r.text
+    assert [x["title"] for x in r.json()["reminders"]] == ["lecture", "dentist"]
+    assert r.json()["skipped"] == 0
+    lecture = r.json()["reminders"][0]
+    assert lecture["repeat"] == "weekly" and lecture["done_dates"] == ["2026-11-09"]
+
+    # the copy here is the user's now: a second import leaves it as it is
+    client.put(f"/api/reminders/{lecture['id']}", json={
+        "title": "lecture (moved)", "kind": "anchor", "start_date": "2026-11-03"})
+    again = {"import_id": str(uuid.uuid4()), "reminders": [
+        imported("gcal:a", title="lecture"), imported("gcal:c", title="gym")]}
+    r = client.post("/api/reminders/import", json=again)
+    assert r.status_code == 201, r.text
+    assert [x["title"] for x in r.json()["reminders"]] == ["gym"] and r.json()["skipped"] == 1
+    titles = sorted(x["title"] for x in client.get("/api/reminders").json()["reminders"])
+    assert titles == ["dentist", "gym", "lecture (moved)"]
+
+
+def test_import_can_be_undone_without_touching_the_rest(client):
+    register(client)
+    client.post("/api/reminders", json=new_reminder(title="by hand"))
+    first, second = str(uuid.uuid4()), str(uuid.uuid4())
+    client.post("/api/reminders/import", json={"import_id": first, "reminders": [imported("gcal:a")]})
+    client.post("/api/reminders/import", json={
+        "import_id": second, "reminders": [imported("gcal:b", title="later")]})
+
+    assert client.delete(f"/api/reminders/imports/{first}").status_code == 204
+    left = sorted(x["title"] for x in client.get("/api/reminders").json()["reminders"])
+    assert left == ["by hand", "later"]
+    # nothing left of it — undoing again is still fine
+    assert client.delete(f"/api/reminders/imports/{first}").status_code == 204
+
+
+def test_import_checks_every_reminder(client):
+    register(client)
+    bad = [
+        {"import_id": str(uuid.uuid4()), "reminders": []},
+        {"import_id": str(uuid.uuid4()), "reminders": [new_reminder(kind="anchor", start_date="2026-11-02")]},
+        {"import_id": str(uuid.uuid4()), "reminders": [imported("gcal:a"), imported("gcal:b", start_date=None)]},
+        {"reminders": [imported("gcal:a")]},
+    ]
+    for body in bad:
+        assert client.post("/api/reminders/import", json=body).status_code == 422, body
+    # one bad row stops the whole batch
+    assert client.get("/api/reminders").json()["reminders"] == []
 
 
 def test_reminder_duration(client):

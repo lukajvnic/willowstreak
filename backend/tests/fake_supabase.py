@@ -46,6 +46,7 @@ class _Query:
         self._op = "select"
         self._payload: Any = None
         self._on_conflict: list[str] = []
+        self._ignore_duplicates = False
         self._single = False
         self._order: str | None = None
         self._embed: str | None = None
@@ -84,9 +85,12 @@ class _Query:
         self._op, self._payload = "update", payload
         return self
 
-    def upsert(self, payload: dict, on_conflict: str = "") -> _Query:
+    def upsert(
+        self, payload: dict | list[dict], on_conflict: str = "", ignore_duplicates: bool = False
+    ) -> _Query:
         self._op, self._payload = "upsert", payload
         self._on_conflict = [c.strip() for c in on_conflict.split(",") if c.strip()]
+        self._ignore_duplicates = ignore_duplicates
         return self
 
     def delete(self) -> _Query:
@@ -138,12 +142,10 @@ class _Query:
             return _Response([row])
 
         if self._op == "upsert":
-            payload = {k: _resolve(v) for k, v in self._payload.items()}
-            for row in rows:
-                if all(str(row.get(c)) == str(payload.get(c)) for c in self._on_conflict):
-                    row.update(payload)
-                    return _Response([row])
-            return _Response([self._db.insert(self._table, payload)])
+            many = isinstance(self._payload, list)
+            written = [self._upsert_one(rows, p) for p in (self._payload if many else [self._payload])]
+            # like PostgREST, a row left alone by ignore_duplicates isn't returned
+            return _Response([row for row in written if row is not None])
 
         if self._op == "update":
             hits = [r for r in rows if self._matches(r)]
@@ -160,6 +162,16 @@ class _Query:
         raise AssertionError(f"unsupported op {self._op}")
 
     # ---- embedding
+    def _upsert_one(self, rows: list[dict], payload: dict) -> dict | None:
+        payload = {k: _resolve(v) for k, v in payload.items()}
+        for row in rows:
+            if all(str(row.get(c)) == str(payload.get(c)) for c in self._on_conflict):
+                if self._ignore_duplicates:
+                    return None
+                row.update(payload)
+                return row
+        return self._db.insert(self._table, payload)
+
     def _embed_matches(self, row: dict) -> bool:
         for kind, column, value in self._filters:
             if "." not in column:

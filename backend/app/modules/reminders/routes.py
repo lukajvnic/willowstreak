@@ -13,7 +13,9 @@ from app.modules.reminders.controller import (
     delete_reminder_controller,
     edit_category_controller,
     edit_reminder_controller,
+    import_reminders_controller,
     list_reminders_controller,
+    undo_import_controller,
     update_reminder_controller,
 )
 from app.modules.reminders.schemas import (
@@ -22,6 +24,8 @@ from app.modules.reminders.schemas import (
     CategoryResponse,
     ReminderCreateRequest,
     ReminderEditRequest,
+    ReminderImportRequest,
+    ReminderImportResponse,
     ReminderResponse,
     RemindersResponse,
     ReminderUpdateRequest,
@@ -80,6 +84,27 @@ def delete_reminder(
     delete_reminder_controller(
         current_user=current_user, client=client, reminder_id=str(reminder_id)
     )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/reminders/import", response_model=ReminderImportResponse, status_code=status.HTTP_201_CREATED
+)
+def import_reminders(
+    payload: ReminderImportRequest,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    client: Annotated[Client, Depends(get_current_user_client)],
+) -> ReminderImportResponse:
+    return import_reminders_controller(current_user=current_user, client=client, payload=payload)
+
+
+@router.delete("/reminders/imports/{import_id}", status_code=status.HTTP_204_NO_CONTENT)
+def undo_import(
+    import_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    client: Annotated[Client, Depends(get_current_user_client)],
+) -> Response:
+    undo_import_controller(current_user=current_user, client=client, import_id=str(import_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -377,7 +377,7 @@ export const repeatsFor = (kind: Kind) =>
 const DAY_MS = 86_400_000;
 
 /** whole days from a to b — through UTC noon, so a daylight-saving shift can't round it off */
-function daysBetween(a: string, b: string): number {
+export function daysBetween(a: string, b: string): number {
   const [ay, am, ad] = a.split("-").map(Number);
   const [by, bm, bd] = b.split("-").map(Number);
   return Math.round((Date.UTC(by, bm - 1, bd, 12) - Date.UTC(ay, am - 1, ad, 12)) / DAY_MS);

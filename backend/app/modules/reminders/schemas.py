@@ -128,6 +128,29 @@ class ReminderResponse(BaseModel):
     reminder: ReminderData
 
 
+class ImportedReminder(ReminderShape):
+    """One reminder of an import: a reminder's shape, plus where it came from."""
+
+    id: UUID
+    # what it is in the calendar it came from — the same one never lands twice
+    source: str = Field(min_length=1, max_length=300)
+    # occurrences of a repeat that were cancelled over there, ticked off here
+    done_dates: list[date] = Field(default_factory=list, max_length=5000)
+
+
+class ReminderImportRequest(BaseModel):
+    # made by the client; every reminder of this run carries it, so it can be undone
+    import_id: UUID
+    reminders: list[ImportedReminder] = Field(min_length=1, max_length=2000)
+
+
+class ReminderImportResponse(BaseModel):
+    # only the ones that were new
+    reminders: list[ReminderData]
+    # the ones already here from an earlier import
+    skipped: int
+
+
 # the categories every user starts with — they live in the client, and a
 # reminder points at one by this slug
 BUILTIN_CATEGORIES = ("school", "work", "exercise", "chores", "health")

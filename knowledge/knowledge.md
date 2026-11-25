@@ -496,29 +496,47 @@ Opening the site used to be a blank page until the script, the session check and
 - checked by running vite with a fake Supabase URL, a made-up session in
   localStorage and Playwright holding `/api/*` open — no backend needed.
 
-## google calendar import (2026-11-25, planned, nothing built)
+## google calendar import (built 2026-11-25; not yet tried against real google)
 
-Plan and research in `plans/google-calendar.md`. Luka's steer: a **one-time
-port** is enough — the user brings their google calendar over once and then
-uses the willowstreak calendar. So the plan is an import, not a live link:
+A one-time port: the user's upcoming google events are copied in as ordinary
+reminders, and nothing of google's is kept. Plan, decisions and setup steps are
+in `plans/google-calendar.md`.
 
-- google events become real reminders (anchors / floaters). nothing of google's
-  is stored: the browser gets a read-only token for about an hour (google's
-  "token model"), reads, and drops it. no backend google code, no sync job.
-- two ways in behind one import: an "import from google" button first, a
-  calendar-file (.ics / .zip) upload second. the file route needs no google
-  approval and covers apple / outlook.
-- google's testing mode (100 listed users, access lapsing after 7 days) is
-  enough for Luka and friends, because the import takes a minute. google's
-  review is only needed to open the button to everyone.
-- it lives on the to-do page as an action (empty state + a menu on the calendar
-  heading), not in settings.
-- needs: `POST /api/reminders/import` (batch), and a migration adding
-  `reminders.source` (dedupe on re-import) and `reminders.import_id` (undo).
-- decided by Luka (2026-11-25): imports come in as **anchors** (no new `event`
-  kind; several-day events as floaters), and the first version is **friends
-  only** — the google button on google's test list, no file upload or review.
-  cancelled occurrences get ticked off and descriptions are dropped unless he
-  says otherwise.
-- the earlier live-link draft (stored tokens, sync, webhooks) was dropped; the
-  plan says when it would be worth revisiting.
+- **how it's reached**: "import" on the to-do calendar's heading (`Calendar`'s
+  `onImport`), shown only when `VITE_GOOGLE_CLIENT_ID` is set (`googleConfigured`).
+- **`lib/googleCalendar.ts`**: google's sign-in script (loaded when the dialog
+  opens, so the click can open the window), `requestAccess()` for a read-only
+  token that lives about an hour, `listCalendars`, `readCalendar`.
+  `revokeAccess` runs when the dialog closes. Scopes:
+  `calendar.calendarlist.readonly` + `calendar.events.readonly`. The backend
+  never sees a google token.
+- **`lib/calendarImport.ts`** (pure, tested in `calendarImport.test.ts`):
+  `translate(events, today)` → drafts. Inside a day → anchor; over several days
+  or longer than 24h → floater; a series → one repeating reminder, or one
+  weekly reminder per weekday for "mon, wed, fri"; a cancelled occurrence →
+  that day in `done_dates`; a moved one → that plus a one-off. `seriesPlan`
+  returns null for a rule with no equivalent here, and `readCalendar` swaps
+  those series for their next 90 days of occurrences. Past one-offs, declined
+  invitations and non-events (working location, focus time) are left out.
+  Weekdays in a rule are shifted when the viewer's zone puts the event on
+  another day.
+- **`components/ImportCalendar.tsx`**: start → reading → review (a row per
+  calendar: switch, count, category) → done, with undo. Calendars ticked in
+  google's sidebar start on; all but the primary default to a new category in
+  the calendar's colour.
+- **backend**: `POST /api/reminders/import` (`import_id` + up to 2000
+  reminders, one write, `ignore_duplicates` on `user_id,source`; returns the
+  new rows and `skipped`) and `DELETE /api/reminders/imports/{import_id}`.
+  Running an import again skips what's already here, and leaves edited copies alone.
+- **migration** `20261125120000_reminder_import.sql`: `reminders.source`
+  (`gcal:<event id>`, plus `:MO` etc. when one event became several),
+  `unique (user_id, source)`, and `reminders.import_id`. **Needs `db push` on
+  the live database.**
+- **decided by Luka**: imports are anchors (no `event` kind), so they have tick
+  boxes and count as open; first version is friends only, on google's test list.
+- **tests**: `npm test` in `web-app/` (vitest, added for this) and three import
+  tests in `backend/tests/test_api.py`. The flow was also run in a browser with
+  google and the api both stubbed.
+- **not checked against real google**: that the events list returns a series
+  whose first event is before `timeMin`, and the exact shape of cancelled
+  occurrences. Try with a real account before telling friends.
