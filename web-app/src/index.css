@@ -4460,19 +4460,81 @@ body.sketching { cursor: ns-resize; user-select: none; }
 
 /* --- habits: a year of cells per habit --- */
 
-/* about what Heatmap's `fit` comes to: the row less the day labels either
- * side, and never past 44 weeks of 28px cells */
-.sk-habit {
-  width: min(100% - 124px, 1490px);
-  margin: 0 auto;
+/* the placeholder is the real panel's markup (.panel-head, .heatmap,
+ * .panel-foot), so the real rules lay it out. what Heatmap works out in script
+ * for a `fit` grid — the cell, the gap, how far in the grid sits — is worked out
+ * again here from the row's width, so the grey grid stands exactly where the
+ * real one lands. keep this in step with fitCell / gapFor / leadFor in Heatmap.tsx */
+.sk-habits { container-type: inline-size; }
+
+.sk-habits .panel {
+  /* the row's width, as whole px like the clientWidth Heatmap reads */
+  --w: round(nearest, 100cqw, 1px);
+  /* fitCell's two passes: 53.46 is 44 weeks plus 43 gaps of 0.22 of a cell,
+   * and the label column either side is 21.4px + 1.1143 a cell (74px at 14) */
+  --pass1: round(down, (var(--w) - 74px) / 53.46, 1px);
+  --pass2: round(down, (var(--w) - 42.8px - 2.2285714 * var(--pass1)) / 53.46, 1px);
+  --cell: clamp(14px, var(--pass2), 28px);
+  --gap: max(3px, round(down, var(--cell) * 0.22, 1px));
+  --step: calc(var(--cell) + var(--gap));
+  /* the cell against the 14px everything was designed at, as a plain number */
+  --scale: tan(atan2(var(--cell), 14px));
+  --label: calc(0.4 + 0.6 * var(--scale));
+  --text: calc(0.5 + 0.5 * var(--scale));
+  --cells-w: calc(44 * var(--cell) + 43 * var(--gap));
 }
 
-/* one block cut into cells by a mask — a tile is a cell plus its gap */
+/* wide enough to centre the grid with its labels clear on the left — what
+ * `data-centred` switches on for a real panel. under this the cells stay at
+ * 14px and the heatmap scrolls, as the real one does */
+@container (min-width: 818.5px) {
+  .sk-habits .panel {
+    --grid-w: var(--cells-w);
+    --lead: calc(11px + 26px * var(--label));
+    --left: round(down, (var(--w) - var(--grid-w)) / 2, 1px);
+  }
+
+  .sk-habits .panel-head,
+  .sk-habits .panel-foot {
+    width: var(--grid-w);
+    margin-left: var(--left);
+  }
+
+  .sk-habits .heatmap {
+    width: calc(var(--lead) + var(--grid-w) + 3px);
+    margin-left: calc(var(--left) - var(--lead));
+  }
+}
+
+/* the room a new-year tag takes under the grid, when this year's jan 1 is in
+ * view (--sk-seam, set by index.html) */
+.sk-habits .heatmap {
+  overflow: hidden;
+  padding-bottom: calc(3px + 14px * var(--label) * var(--sk-seam, 0));
+}
+
+/* one block cut into cells by masks laid over each other: stripes across,
+ * stripes down, and a tile per corner to round it — each corner's tile is hung
+ * from that corner, so none of them needs to know the gap */
 .sk-grid {
-  margin-top: 34px;
-  aspect-ratio: 53.46 / 8.32;
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 122 122'%3E%3Crect width='100' height='100' rx='26'/%3E%3C/svg%3E") 0 0 / calc(100% / 43.82) calc(100% / 6.82);
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 122 122'%3E%3Crect width='100' height='100' rx='26'/%3E%3C/svg%3E") 0 0 / calc(100% / 43.82) calc(100% / 6.82);
+  flex: none;
+  width: var(--cells-w);
+  height: calc(7 * var(--cell) + 6 * var(--gap));
+  --down: repeating-linear-gradient(90deg, #000 0 var(--cell), transparent var(--cell) var(--step));
+  --across: repeating-linear-gradient(180deg, #000 0 var(--cell), transparent var(--cell) var(--step));
+  -webkit-mask-image: var(--down), var(--across), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 21.3A21.3 21.3 0 0 1 21.3 0H100V100H0Z'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0H78.7A21.3 21.3 0 0 1 100 21.3V100H0Z'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0H100V100H21.3A21.3 21.3 0 0 1 0 78.7Z'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0H100V78.7A21.3 21.3 0 0 1 78.7 100H0Z'/%3E%3C/svg%3E");
+  mask-image: var(--down), var(--across), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 21.3A21.3 21.3 0 0 1 21.3 0H100V100H0Z'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0H78.7A21.3 21.3 0 0 1 100 21.3V100H0Z'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0H100V100H21.3A21.3 21.3 0 0 1 0 78.7Z'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M0 0H100V78.7A21.3 21.3 0 0 1 78.7 100H0Z'/%3E%3C/svg%3E");
+  -webkit-mask-size: auto, auto, var(--step) var(--step), var(--step) var(--step), var(--step) var(--step), var(--step) var(--step);
+  mask-size: auto, auto, var(--step) var(--step), var(--step) var(--step), var(--step) var(--step), var(--step) var(--step);
+  -webkit-mask-position: 0 0, 0 0, 0 0, calc(0px - var(--gap)) 0, 0 calc(0px - var(--gap)), calc(0px - var(--gap)) calc(0px - var(--gap));
+  mask-position: 0 0, 0 0, 0 0, calc(0px - var(--gap)) 0, 0 calc(0px - var(--gap)), calc(0px - var(--gap)) calc(0px - var(--gap));
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  /* nothing is drawn after today: the days left in this week (--sk-rest, set
+   * by index.html) come off the bottom of the last column */
+  --today: calc(100% - var(--sk-rest, 0) * var(--step));
+  --last: calc(100% - var(--cell) - var(--gap) / 2);
+  clip-path: polygon(0 0, 100% 0, 100% var(--today), var(--last) var(--today), var(--last) 100%, 0 100%);
 }
 
 /* .sk's own rules, without its corners — the mask does the rounding */
@@ -4489,7 +4551,18 @@ body.sketching { cursor: ns-resize; user-select: none; }
   animation: sk-sweep 1.7s linear infinite;
 }
 
-.sk-habits .panel-head { align-items: center; }
+/* a grey bar exactly the size of the words it stands for: the words are there,
+ * unseen, so the line is as tall and as long as the real one in any font */
+.sk-ink {
+  display: inline-block;
+  color: transparent;
+  user-select: none;
+  /* a bar the height of the letters, not of the whole line */
+  clip-path: inset(14% 0 round 5px);
+}
+
+.sk-habits .panel-edit { visibility: hidden; }
+.sk-habits .today-line { border-bottom-color: transparent; }
 
 /* --- leaderboard: three plinths --- */
 
@@ -4555,17 +4628,6 @@ body.sketching { cursor: ns-resize; user-select: none; }
  * the grey app for someone who was signed in, the name alone for anyone else */
 html[data-boot="out"] [data-boot="in"],
 html:not([data-boot="out"]) [data-boot="out"] { display: none; }
-
-/* too narrow to fit: the real grid stays at 14px cells and scrolls sideways */
-@media (max-width: 860px) {
-  .sk-habit { width: 100%; }
-  .sk-grid {
-    aspect-ratio: auto;
-    height: 116px;
-    -webkit-mask-size: 17px 17px;
-    mask-size: 17px 17px;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .sk,

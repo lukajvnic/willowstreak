@@ -19,6 +19,20 @@
       } catch {
         document.documentElement.dataset.boot = "out";
       }
+
+      // two things about today the grey habit grids need to match the real ones
+      // (.sk-grid in index.css): how many days of this week are still to come,
+      // and whether a jan 1 falls in the 44 weeks shown (newYearIndex in habits.ts)
+      (function () {
+        var now = new Date();
+        var rest = 6 - now.getDay();
+        var end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + rest);
+        var from = new Date(end.getFullYear(), end.getMonth(), end.getDate() - (44 * 7 - 1) + 7);
+        var jan1 = new Date(end.getFullYear(), 0, 1);
+        var style = document.documentElement.style;
+        style.setProperty("--sk-rest", rest);
+        style.setProperty("--sk-seam", jan1 >= from ? 1 : 0);
+      })();
     </script>
   </head>
   <body>
@@ -43,42 +57,90 @@
 
         <div class="stack sk-habits">
           <section class="panel" aria-hidden="true">
-            <div class="sk-habit">
-              <div class="panel-head">
-                <span class="sk" style="width: 132px; height: 18px"></span>
-                <span class="sk" style="width: 84px; height: 12px"></span>
+            <div class="panel-head">
+              <h2 class="panel-title"><span class="sk sk-ink">reading</span></h2>
+              <div class="panel-side">
+                <span class="panel-meta"><span class="sk sk-ink">pages per day</span></span>
+                <span class="panel-edit"><svg></svg></span>
               </div>
-              <div class="sk-grid"></div>
-              <div class="panel-foot">
-                <span class="sk" style="width: 190px; height: 13px"></span>
-                <span class="sk" style="width: 120px; height: 13px"></span>
+            </div>
+            <div class="heatmap">
+              <div class="day-labels">
+                <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
               </div>
+              <div class="grid-wrap">
+                <div class="months"></div>
+                <div class="sk-grid"></div>
+              </div>
+            </div>
+            <div class="panel-foot">
+              <dl class="habit-stats">
+                <div class="habit-stat"><span class="sk sk-ink">streak: 12 days</span></div>
+                <div class="habit-stat"><span class="sk sk-ink">average: 2.5 pages</span></div>
+              </dl>
+              <span class="today">
+                <span class="today-line">
+                  <span class="today-label"><span class="sk sk-ink">today: 2 pages</span></span>
+                </span>
+              </span>
             </div>
           </section>
           <section class="panel" aria-hidden="true">
-            <div class="sk-habit">
-              <div class="panel-head">
-                <span class="sk" style="width: 96px; height: 18px"></span>
-                <span class="sk" style="width: 84px; height: 12px"></span>
+            <div class="panel-head">
+              <h2 class="panel-title"><span class="sk sk-ink">run</span></h2>
+              <div class="panel-side">
+                <span class="panel-meta"><span class="sk sk-ink">km per day</span></span>
+                <span class="panel-edit"><svg></svg></span>
               </div>
-              <div class="sk-grid"></div>
-              <div class="panel-foot">
-                <span class="sk" style="width: 190px; height: 13px"></span>
-                <span class="sk" style="width: 120px; height: 13px"></span>
+            </div>
+            <div class="heatmap">
+              <div class="day-labels">
+                <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
               </div>
+              <div class="grid-wrap">
+                <div class="months"></div>
+                <div class="sk-grid"></div>
+              </div>
+            </div>
+            <div class="panel-foot">
+              <dl class="habit-stats">
+                <div class="habit-stat"><span class="sk sk-ink">streak: 4 days</span></div>
+                <div class="habit-stat"><span class="sk sk-ink">average: 3.1 km</span></div>
+              </dl>
+              <span class="today">
+                <span class="today-line">
+                  <span class="today-label"><span class="sk sk-ink">today: 2 pages</span></span>
+                </span>
+              </span>
             </div>
           </section>
           <section class="panel" aria-hidden="true">
-            <div class="sk-habit">
-              <div class="panel-head">
-                <span class="sk" style="width: 154px; height: 18px"></span>
-                <span class="sk" style="width: 84px; height: 12px"></span>
+            <div class="panel-head">
+              <h2 class="panel-title"><span class="sk sk-ink">meditation</span></h2>
+              <div class="panel-side">
+                <span class="panel-meta"><span class="sk sk-ink">yes / no</span></span>
+                <span class="panel-edit"><svg></svg></span>
               </div>
-              <div class="sk-grid"></div>
-              <div class="panel-foot">
-                <span class="sk" style="width: 190px; height: 13px"></span>
-                <span class="sk" style="width: 120px; height: 13px"></span>
+            </div>
+            <div class="heatmap">
+              <div class="day-labels">
+                <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
               </div>
+              <div class="grid-wrap">
+                <div class="months"></div>
+                <div class="sk-grid"></div>
+              </div>
+            </div>
+            <div class="panel-foot">
+              <dl class="habit-stats">
+                <div class="habit-stat"><span class="sk sk-ink">streak: 20 days</span></div>
+                <div class="habit-stat"><span class="sk sk-ink">done: 180 days</span></div>
+              </dl>
+              <span class="today">
+                <span class="today-line">
+                  <span class="today-label"><span class="sk sk-ink">today: 2 pages</span></span>
+                </span>
+              </span>
             </div>
           </section>
           <span class="sk-label" role="status">loading habits…</span>

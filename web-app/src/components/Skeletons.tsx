@@ -21,23 +21,61 @@ function Busy({ what }: { what: string }) {
   );
 }
 
-const TITLES = [132, 96, 154];
+/** stand-in words: unseen, they only give each grey bar its size */
+const HABITS = [
+  { name: "reading", meta: "pages per day", stats: ["streak: 12 days", "average: 2.5 pages"] },
+  { name: "run", meta: "km per day", stats: ["streak: 4 days", "average: 3.1 km"] },
+  { name: "meditation", meta: "yes / no", stats: ["streak: 20 days", "done: 180 days"] },
+];
 
+const Ink = ({ children }: { children: string }) => <span className="sk sk-ink">{children}</span>;
+
+/** the habits tab: each panel is Heatmap's own markup with grey in place of the
+ * words and cells, and index.css sizes it the way Heatmap's `fit` would */
 export function HabitsSkeleton() {
   return (
     <div className="stack sk-habits">
-      {TITLES.map((w) => (
-        <section className="panel" aria-hidden key={w}>
-          <div className="sk-habit">
-            <div className="panel-head">
-              <Sk w={w} h={18} />
-              <Sk w={84} h={12} />
+      {HABITS.map((h) => (
+        <section className="panel" aria-hidden key={h.name}>
+          <div className="panel-head">
+            <h2 className="panel-title">
+              <Ink>{h.name}</Ink>
+            </h2>
+            <div className="panel-side">
+              <span className="panel-meta">
+                <Ink>{h.meta}</Ink>
+              </span>
+              <span className="panel-edit">
+                <svg />
+              </span>
             </div>
-            <div className="sk-grid" />
-            <div className="panel-foot">
-              <Sk w={190} h={13} />
-              <Sk w={120} h={13} />
+          </div>
+          <div className="heatmap">
+            <div className="day-labels">
+              {Array.from({ length: 7 }, (_, i) => (
+                <span key={i} />
+              ))}
             </div>
+            <div className="grid-wrap">
+              <div className="months" />
+              <div className="sk-grid" />
+            </div>
+          </div>
+          <div className="panel-foot">
+            <dl className="habit-stats">
+              {h.stats.map((stat) => (
+                <div className="habit-stat" key={stat}>
+                  <Ink>{stat}</Ink>
+                </div>
+              ))}
+            </dl>
+            <span className="today">
+              <span className="today-line">
+                <span className="today-label">
+                  <Ink>today: 2 pages</Ink>
+                </span>
+              </span>
+            </span>
           </div>
         </section>
       ))}
