@@ -495,3 +495,12 @@ Opening the site used to be a blank page until the script, the session check and
   must be kept the same, or the handover from one to the other shows.
 - checked by running vite with a fake Supabase URL, a made-up session in
   localStorage and Playwright holding `/api/*` open — no backend needed.
+
+## google calendar link (2026-11-25, planned, nothing built)
+
+Plan and research in `plans/google-calendar.md`. Proposal: one-way and read-only
+(google → willowstreak), events drawn as their own layer rather than converted
+to reminders, our own OAuth flow in the backend with tokens kept server-side,
+and the link button on the to-do page's calendar heading. The long pole is
+Google's review of the calendar scope; testing mode allows 100 listed users
+whose link expires weekly. Four open questions for Luka are at the end of the plan.
