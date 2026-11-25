@@ -515,8 +515,10 @@ uses the willowstreak calendar. So the plan is an import, not a live link:
   heading), not in settings.
 - needs: `POST /api/reminders/import` (batch), and a migration adding
   `reminders.source` (dedupe on re-import) and `reminders.import_id` (undo).
-- the open design question for the to-do redesign: imported events aren't
-  to-dos, so the plan recommends a fifth kind, `event`, with no tick box.
-  Four open questions for Luka are at the end of the plan.
+- decided by Luka (2026-11-25): imports come in as **anchors** (no new `event`
+  kind; several-day events as floaters), and the first version is **friends
+  only** — the google button on google's test list, no file upload or review.
+  cancelled occurrences get ticked off and descriptions are dropped unless he
+  says otherwise.
 - the earlier live-link draft (stored tokens, sync, webhooks) was dropped; the
   plan says when it would be worth revisiting.

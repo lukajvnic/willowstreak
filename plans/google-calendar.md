@@ -8,6 +8,19 @@ the first draft of this plan proposed a live read-only link. a one-time port is
 a different and much smaller thing, so most of that draft is gone. what's left
 of it is under "what we're not doing".
 
+## decided (Luka, 2026-11-25)
+
+- **imports come in as anchors.** no new `event` kind. they'll have tick boxes
+  and count as open reminders like any other anchor. events that span several
+  days still have to be floaters, since an anchor is one day.
+- **the first version is for friends only**: the google button, with friends
+  added to google's test list. no file upload, no google review, no privacy
+  policy yet.
+- not answered, so the first build takes the cheap option: a cancelled
+  occurrence is ticked off (no "skip"), and google descriptions are dropped.
+
+so the first build is phases 1 and 2 below, with the button only.
+
 ## the short version
 
 - **an import, not a link.** google events are copied in once and become real
