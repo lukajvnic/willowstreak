@@ -1,156 +1,226 @@
-# google calendar link — plan
+# google calendar → willowstreak — plan
 
-written 2026-11-25, before the to-do redesign. nothing is built yet. this is the
-proposal and the questions that need an answer first.
+written 2026-11-25, revised the same day after Luka said a **one-time port is
+fine**: the user brings their google calendar over once, then lives in the
+willowstreak calendar. nothing is built yet.
+
+the first draft of this plan proposed a live read-only link. a one-time port is
+a different and much smaller thing, so most of that draft is gone. what's left
+of it is under "what we're not doing".
 
 ## the short version
 
-- **do it one way first: google → willowstreak, read-only.** google events show
-  on our calendar as their own layer. we never write to google.
-- **don't turn google events into reminders.** the two don't mean the same
-  thing (see "mismatches"). draw them next to reminders instead.
-- **we run the google sign-in ourselves, in the backend**, and keep the tokens
-  server-side. supabase's google login isn't enough on its own.
-- **the link button goes on the to-do page**, on the calendar. there's no
-  settings page today.
-- **the slow part isn't code, it's google's review.** reading calendars is a
-  "sensitive" scope, so anyone beyond a short test list needs google to approve
-  the app.
+- **an import, not a link.** google events are copied in once and become real
+  willowstreak reminders the user can edit, tick off and repeat like any other.
+- **nothing of google's is kept.** the browser gets a read-only pass from google
+  that lasts about an hour, reads the calendar, and throws the pass away. no
+  tokens in our database, no google code in the backend, no sync job, no webhook.
+- **two ways in, one import behind them:** an "import from google" button (the
+  easy path), and a calendar-file upload (works without google's approval, and
+  for apple / outlook calendars too).
+- **it lives on the to-do page**, as an action, not a setting.
+- **the real work is the translation**, not the plumbing: google's events have
+  to be turned into anchors and floaters, and some don't fit.
+- **the decision this forces on the to-do redesign:** imported events aren't
+  to-dos. a week of lectures shouldn't become 15 open tick boxes.
 
-## options
+## why a one-time port is the right call for this app
 
-| | what the user gets | cost |
+- willowstreak's calendar is meant to be where the user plans, with reminders,
+  floaters and habits next to each other. a live mirror of google keeps google
+  as the real calendar and makes ours a viewer.
+- a mirror means storing google tokens, a sync job, and google's review before
+  anyone outside a test list can use it. a port needs none of the first two and
+  makes the third optional for a long while.
+- it leaves the to-do redesign free: once events are native rows there's one
+  kind of thing on the calendar to design for, not two.
+
+what it costs: anything that lands in google afterwards (an invite from someone
+else, an event added on the phone's calendar app) won't appear. re-running the
+import picks up new events, but that's a manual step. see "after the import".
+
+## the two ways in
+
+| | import from google (button) | calendar file (.ics / .zip) |
 |---|---|---|
-| **A. read-only link (recommended)** | their google events on our calendar, kept up to date | google review; token storage; a sync job |
-| B. two-way | A, plus willowstreak anchors appear in google | A, plus a write scope (harder review), duplicates and conflicts to resolve, loops to prevent |
-| C. paste a private ics link | events show, no google sign-in at all | no review; but the user has to dig a secret url out of google's settings, and google only refreshes that feed every several hours |
+| steps for the user | click, pick a google account, allow, pick calendars | on a computer: google calendar settings → import & export → export, then upload the file |
+| works on a phone | yes | no — google only exports from a computer |
+| needs google's approval | not for people on our test list; yes to open it to everyone | never |
+| other calendars (apple, outlook) | no | yes |
+| school / work accounts | the organisation's admin can block outside apps | the admin can block export too |
+| build cost | small: a google script tag and two api calls | medium: a file parser, including time zones and zip |
 
-C is a cheap fallback worth keeping in mind if the review drags. it's also the
-only one that works for apple / outlook calendars.
+**build the google button first.** it's the path people will actually finish,
+and it's the smaller build. the file upload comes second, as the route for
+anyone the button can't serve. both feed the same translate → review → save
+steps, so the second one is only a new front door.
 
-## mismatches between google's calendar and ours
+### what "test list" means for the button
 
-| google | willowstreak today | what we do |
+reading a calendar is a scope google calls sensitive. until google has reviewed
+the app:
+
+- **testing mode:** up to 100 people, each added by email in the google cloud
+  console. their access lapses after 7 days — which broke the live-link idea
+  but **doesn't matter here**, since the import is done in a minute.
+- **published but unreviewed:** anyone can use it, behind a "google hasn't
+  verified this app" warning, up to 100 people over the project's lifetime.
+  that cap can't be reset.
+- **reviewed:** no warning, no cap. needs a homepage and privacy policy on
+  `willowstreak.com`, a written reason for the scope, and a demo video. google
+  says days; their own docs also say it can take much longer.
+
+so: testing mode covers Luka and friends now. start the review when strangers
+need it. the file upload is the release valve in between.
+
+## the translation: google event → reminder
+
+| google event | becomes | notes |
 |---|---|---|
-| an **event**: something that happens. no "done". | a **reminder**: something to do, ticked off. four kinds (refile, backlog, floater, anchor). | keep events as their own thing: no tick box, not counted in "N open" |
-| a timed event can run past midnight or over several days | an anchor is one day, at most 24h | draw it across the days; don't store it as an anchor |
-| an all-day event over several days means "this is on, all of those days" | a floater's window means "do it some time in here" | looks alike, means something else. show in the all-day band, styled as an event |
-| repeats by any rule (rrule), with moved and cancelled single occurrences | six presets (daily … yearly), `repeat_until`, `done_dates` | ask google for the occurrences already expanded (`singleEvents=true`) for the weeks on screen. we never read an rrule |
-| every time has a time zone | a date and a clock time, no zone | convert to the browser's zone when drawing |
-| many calendars per account, each with a colour | categories, each with a colour | each google calendar is a switch with its own colour. mapping a calendar to a category is a later nicety |
-| its own notifications | browser alerts while a tab is open | no alerts for google events. google already sends them |
-| invitations: accepted / declined / maybe; "busy" events with no title | — | hide declined; show untitled ones as "busy" |
+| timed, within a day | **anchor** with a time and a length | length clamped to 5 min – 24 h |
+| all day, one day | **anchor** with no time | sits in the all-day band, as untimed anchors do now |
+| all day, several days | **floater** over those days | draws right (a bar across the days). a floater means "some time in here", which isn't quite it — see the redesign question |
+| timed, longer than 24 h | **floater** over those days | the times are lost. flagged in the review |
+| repeats daily / weekly / every 2 weeks / monthly on a date / yearly | the same repeat | maps straight onto our six |
+| repeats mon–fri | `weekdays` | |
+| repeats on several weekdays (mon, wed, fri) | **one weekly anchor per weekday** | three rows for a m/w/f class. this is the common timetable case |
+| "ends after 12 times" / "ends on" | `repeat_until` | the count is turned into a date |
+| a repeat we can't express (every 3 weeks, "2nd tuesday") | **one-off anchors** for the next 3 months | flagged in the review |
+| one occurrence cancelled | that day goes into `done_dates` | it shows ticked off instead of gone. we have no "skip this one" — see open questions |
+| one occurrence moved | the original day skipped as above, plus a one-off anchor | |
+| event's time zone | converted to the browser's zone, then stored as plain date + time | same as every reminder today |
+| location | `place`, cut to 120 characters | |
+| title | `title`, cut to 200; untitled → "busy" | |
+| google reminder (popup) | `alert_minutes`, if a day or less before | optional; off by default |
+| description, guests, video link | **dropped** | there's nowhere to put them yet |
+| a google calendar | a **category** | chosen in the review: an existing one, or a new one in the calendar's colour |
+| declined invitations | skipped | |
+| one-off events already past | skipped | a repeat that's still running is kept from its first day |
+| holidays / birthdays calendars | off by default | |
 
-this is why a straight import into `reminders` is the wrong shape: most of an
-event doesn't fit, and edits on either side would fight.
+## the flow
 
-## how it would work (option A)
+1. **start.** on the to-do page: "import a calendar". (where exactly, below.)
+2. **pick the source.** google button or a file.
+3. **review.** one row per calendar: its name, how many events it would bring,
+   a switch, and which category they go into. under it, a short list of
+   anything that didn't translate cleanly ("4 events repeat in a way
+   willowstreak can't; they'll come in as single events for the next 3 months").
+   a total at the bottom: "imports 62 reminders".
+4. **import.** one batch request. the calendar fills in.
+5. **done.** a line saying what came in, with **undo** (removes that import).
 
-1. **connect.** the button sends the browser to google's consent screen. google
-   sends it back to a backend endpoint with a code. the backend swaps the code
-   for an access token and a long-lived refresh token.
-2. **store.** new table `calendar_links` (`user_id`, google account email,
-   refresh token **encrypted**, per-calendar sync state, which calendars are
-   switched on). no row-level access for the browser: only the backend reads it,
-   with the service-role key.
-3. **read.** `GET /api/calendar/events?from=&to=` gives the calendar what's in
-   view. the backend asks google with the user's token.
-4. **keep up to date.** two ways, in order of effort:
-   - *on open*: fetch when the to-do tab opens, and every few minutes while it
-     stays open. no extra moving parts. this is "automatic" as far as the user
-     can tell, and is what phase 1 does.
-   - *push*: google calls a webhook of ours when a calendar changes. it only
-     says "something changed", so we still fetch. the subscriptions expire and
-     have to be renewed on a schedule, which needs a cron (vercel cron or
-     `pg_cron`). only worth it if events must show up within seconds, or once
-     we want alerts for them.
-5. **disconnect.** revoke the token at google, delete the row.
+## what has to be built
 
-### store events, or fetch them each time?
+- **frontend:** the import dialog; the google sign-in script; `lib/calendarImport.ts`
+  holding the translation (pure functions, unit-testable against sample events);
+  later, the file parser.
+- **backend:** `POST /api/reminders/import`, taking up to a couple of thousand
+  rows validated by the existing `ReminderShape`. today's create endpoint is one
+  row per request, which is too slow and too easy to half-finish.
+- **database:** one migration adding `reminders.source` (text, nullable — the
+  google event's id, plus the weekday when one event became several) with
+  `unique (user_id, source)`, and `reminders.import_id`. `source` makes a second
+  import skip what's already there. `import_id` is what undo deletes by.
+- **google cloud:** a project, the calendar api switched on, an oauth client for
+  `willowstreak.com` and localhost, test users added. scopes: read-only events
+  and read-only calendar list, nothing wider.
+- **not needed:** a google client secret, token storage, the service-role key,
+  a cron, a webhook.
 
-- **fetch each time (recommended to start):** nothing of the user's google data
-  sits in our database, which keeps the privacy story and google's review
-  simple. cost: the calendar waits on google when it opens (a grey placeholder
-  covers it), and events can't feed alerts or leaderboards.
-- **keep a copy** in an `external_events` table, updated with google's
-  "what changed since last time" token: instant paint and usable for alerts
-  later. cost: a sync job, stale-copy bugs, and we're now holding calendar data.
+## where it lives
 
-### why not just use supabase's google login?
+**on the to-do page, as an action.** a one-time port isn't a setting: there's
+nothing to configure afterwards and nothing to switch off.
 
-supabase can sign someone in with google and ask for calendar access in the
-same step, but as far as I know it hands the google tokens to the browser once
-and doesn't keep or renew them. (I couldn't confirm this from supabase's docs
-in this pass — check before ruling it out.) we'd still need our own storage and
-refresh. accounts here are email + password, so a separate "link google" step
-is the natural fit anyway.
+- **when the calendar is empty** (a new account): the empty state offers it.
+  "bring your calendar over" beside "add your first reminder".
+- **always:** an "import" item in a small menu on the calendar's heading, for
+  running it again later.
 
-## where the link lives
+no entry in the profile popup. if a settings page appears later it could link
+here, but shouldn't hold it.
 
-**on the to-do page, in the calendar's heading.** reasons:
+## after the import
 
-- that's where the payoff is, and where someone notices their events are missing.
-- there is no settings page. the only account ui is the profile popup.
-- google returns the browser to wherever we say, so it can land back on the
-  to-do tab with the events appearing.
+- **running it again is safe.** events already imported are skipped, new ones
+  come in. events *changed* in google since are not updated — the willowstreak
+  copy is the user's now, and may have been edited.
+- **the gap:** invitations and anything added elsewhere keep landing in google
+  only. for a student whose timetable is the main thing, that's fine. for
+  someone whose work lives in google invites, a one-time port won't be enough,
+  and that's the case the live link in the first draft was for.
+- worth watching once people use it: how often anyone re-imports. if it's
+  often, that's the signal to build the live link.
 
-what it looks like: a quiet "link google calendar" chip in the calendar heading
-while not linked. once linked it becomes a small menu: which calendars show,
-last synced, disconnect. if a settings page is built later, the same menu can be
-reached from there too.
+## what this means for the to-do redesign
 
-since the to-do page is about to be redesigned, the one thing to settle in that
-design is whether **events and reminders share one timeline** (recommended:
-yes, visually distinct) or sit in separate views.
+**imported events aren't to-dos.** today every anchor has a tick box and counts
+towards "N open". port a term's timetable and the list fills with lectures to
+tick off. three ways to handle it, in the order I'd consider them:
 
-## what google requires
+1. **a fifth kind, `event`** (recommended): dated like an anchor or floater, no
+   tick box, shown on the calendar and not in the reminders list. the import
+   writes these. it also fixes the several-days case, where "floater" doesn't
+   mean the right thing. the original brief already splits "appointments at a
+   set time" from "things to get done in a range of days" — this makes the
+   first one a first-class thing.
+2. a flag on anchors ("no tick box"). smaller change, but floaters still don't
+   fit and the list needs a filter anyway.
+3. import as plain anchors and live with it. fine for a first test with one
+   account; not for other people.
 
-- a google cloud project with the calendar api on, and an oauth client.
-- reading calendar events is a **sensitive** scope. before review, the app runs
-  in "testing": up to 100 test users, each added by email, and their link
-  **expires after 7 days** so they have to reconnect weekly.
-- to open it to everyone: google's review. it needs a homepage and privacy
-  policy on our own domain (`willowstreak.com`), a written reason for the
-  scope, and usually a short video of the flow. google quotes a few business
-  days; plan for longer with back-and-forth.
-- ask for the narrowest scope that works: read-only events plus the read-only
-  calendar list.
+the import can be built against option 3 now and switched to `event` when the
+redesign lands, since only the translation's output changes.
 
-## what has to be set up
+two smaller things the redesign could pick up, both surfaced by this:
 
-- backend env: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, a key to encrypt
-  stored tokens, and `SUPABASE_SERVICE_ROLE_KEY` (production doesn't have this
-  one yet; the local `.env` has a placeholder).
-- a privacy policy page on the site.
-- one migration for `calendar_links`.
+- **skipping one occurrence** of a repeat ("no class this week"). we can only
+  tick it off.
+- **a notes / link field.** google descriptions and video links have nowhere
+  to go.
 
 ## phases
 
-1. **prove it** — google project in testing mode, connect flow, token storage,
-   `GET /api/calendar/events`, events drawn read-only on the week and month
-   views. just Luka's account. no review needed.
-2. **make it pleasant** — calendar switches and colours, the linked/unlinked
-   menu, placeholder while loading, a clear "reconnect" state when a token dies.
-3. **open it up** — privacy policy, submit for google's review.
-4. **maybe later** — stored copy + push for instant updates and alerts; "turn
-   this event into a reminder"; two-way; ics links for other calendars.
+1. **prove it** — google project in testing mode; the button; the translation
+   with tests; batch endpoint and migration; a bare review screen. Luka's
+   account only, importing as anchors and floaters.
+2. **make it good** — the full review screen, undo, the empty-state entry,
+   calendar → category mapping.
+3. **the other door** — file upload (.ics and google's .zip).
+4. **open it up** — privacy policy, google's review. only when strangers need
+   the button.
+
+## what we're not doing (and when we would)
+
+- **a live link** (google events mirrored and kept up to date): needs stored
+  tokens, a sync job and google's review up front. revisit if people keep
+  re-importing.
+- **two-way sync** (willowstreak reminders appearing in google): all of the
+  above plus a write scope and conflict handling.
+- **pasting a private calendar address:** the backend would fetch it, and it's
+  no easier for the user than the file export.
 
 ## open questions for Luka
 
-1. is read-only enough for now, or is seeing willowstreak anchors inside google
-   a must?
-2. fetch each time, or keep a copy? (changes how much google data we hold.)
-3. in the redesign, do events and reminders share one timeline?
-4. who needs this first — just you and a few friends (testing mode is fine), or
-   everyone (start the review early)?
+1. does the redesign get an `event` kind (no tick box), or do imports come in
+   as anchors?
+2. a cancelled occurrence of a repeat: ticked off (works today), or add a real
+   "skip"?
+3. keep google descriptions somewhere (a notes field), or drop them?
+4. is the first version just for you and friends on the test list, or should
+   the file upload ship with it so anyone can use it?
 
 ## sources
 
-- google: [sensitive scope verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification),
-  [manage app audience (testing mode, 100 users, 7-day expiry)](https://support.google.com/cloud/answer/15549945),
-  [production readiness](https://developers.google.com/identity/protocols/oauth2/production-readiness/overview),
-  [calendar push notifications](https://developers.google.com/workspace/calendar/api/guides/push),
-  [events: watch](https://developers.google.com/calendar/api/v3/reference/events/watch)
-- not confirmed in this pass, from memory: the exact scope names' classification,
-  how long google's "what changed" tokens last, the refresh delay on ics feeds,
-  and supabase's handling of google tokens.
+- google identity: [using the token model](https://developers.google.com/identity/oauth2/web/guides/use-token-model)
+  (browser-only access, no refresh token; their example uses a calendar scope),
+  [sensitive scope verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification),
+  [unverified apps (the 100-user lifetime cap)](https://support.google.com/cloud/answer/7454865),
+  [manage app audience (testing mode, 7-day expiry)](https://support.google.com/cloud/answer/15549945)
+- google calendar: [export events (computer only, .zip of .ics, admins can restrict)](https://support.google.com/calendar/answer/37111)
+- **not confirmed, from memory:** that the two narrow read-only scopes
+  (`calendar.events.readonly`, `calendar.calendarlist.readonly`) are enough on
+  their own and are both classed sensitive rather than restricted; how exactly
+  school admins block outside apps; the exact shape of google's recurrence data
+  for moved and cancelled occurrences. check each when building phase 1.

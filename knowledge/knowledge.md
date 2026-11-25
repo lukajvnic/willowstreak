@@ -496,11 +496,27 @@ Opening the site used to be a blank page until the script, the session check and
 - checked by running vite with a fake Supabase URL, a made-up session in
   localStorage and Playwright holding `/api/*` open — no backend needed.
 
-## google calendar link (2026-11-25, planned, nothing built)
+## google calendar import (2026-11-25, planned, nothing built)
 
-Plan and research in `plans/google-calendar.md`. Proposal: one-way and read-only
-(google → willowstreak), events drawn as their own layer rather than converted
-to reminders, our own OAuth flow in the backend with tokens kept server-side,
-and the link button on the to-do page's calendar heading. The long pole is
-Google's review of the calendar scope; testing mode allows 100 listed users
-whose link expires weekly. Four open questions for Luka are at the end of the plan.
+Plan and research in `plans/google-calendar.md`. Luka's steer: a **one-time
+port** is enough — the user brings their google calendar over once and then
+uses the willowstreak calendar. So the plan is an import, not a live link:
+
+- google events become real reminders (anchors / floaters). nothing of google's
+  is stored: the browser gets a read-only token for about an hour (google's
+  "token model"), reads, and drops it. no backend google code, no sync job.
+- two ways in behind one import: an "import from google" button first, a
+  calendar-file (.ics / .zip) upload second. the file route needs no google
+  approval and covers apple / outlook.
+- google's testing mode (100 listed users, access lapsing after 7 days) is
+  enough for Luka and friends, because the import takes a minute. google's
+  review is only needed to open the button to everyone.
+- it lives on the to-do page as an action (empty state + a menu on the calendar
+  heading), not in settings.
+- needs: `POST /api/reminders/import` (batch), and a migration adding
+  `reminders.source` (dedupe on re-import) and `reminders.import_id` (undo).
+- the open design question for the to-do redesign: imported events aren't
+  to-dos, so the plan recommends a fifth kind, `event`, with no tick box.
+  Four open questions for Luka are at the end of the plan.
+- the earlier live-link draft (stored tokens, sync, webhooks) was dropped; the
+  plan says when it would be worth revisiting.
